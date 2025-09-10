@@ -1,7 +1,9 @@
 ---
 import "../styles/globals.css";
+import Analytics from '@vercel/analytics/astro';
 export interface Props { title?: string; showBack?: boolean }
 const { title = "Mitocards", showBack = false } = Astro.props;
+
 ---
 
 
@@ -27,6 +29,7 @@ const { title = "Mitocards", showBack = false } = Astro.props;
     <main class="site-main">
       <slot />
     </main>
+    <Analytics />
   </body>
 </html>
 
