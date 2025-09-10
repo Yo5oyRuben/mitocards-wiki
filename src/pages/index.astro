@@ -1,11 +1,217 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
+import "../styles/globals.css";
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+// Rutas de imágenes (sirven desde /public)
+const HERO_IMG = "/img/fondo_inicio.png";
+const LOGO_IMG = "/img/logo_inicio.png";
+
+// Enlaces principales
+const LINKS = [
+  { href: "/cartas/",      title: "Explorar cartas",      desc: "Catálogo ilustrado completo con filtros." },
+  { href: "/constructor/", title: "Constructor de mazos", desc: "Añade cartas, valida huecos y Xeno, exporta JSON." },
+  { href: "/repositorio/", title: "Repositorio de mazos", desc: "Consulta, compara y comparte mazos guardados." },
+];
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mitocards · Wiki & Constructor</title>
+    <meta name="description" content="Mitocards Wiki: explora el catálogo completo, construye mazos válidos y comparte estrategias." />
+
+    <!-- Preload imágenes clave -->
+    <link rel="preload" as="image" href={HERO_IMG} />
+    <link rel="preload" as="image" href={LOGO_IMG} />
+
+    <style is:global>
+      :root{
+        /* Tokens en línea con el resto del sitio (fallback si no vienen de globals.css) */
+        --bg:#0e0f12; --fg:#eaeaea; --muted:#a0a0a0; --accent:#8ec7ff;
+        --card-bg:#161922; --tile:#1a1d27; --chip:#2a2f3a; --ring:#3a4b67;
+        --shadow: 0 12px 40px rgba(0,0,0,.45);
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0; background:var(--bg); color:var(--fg);
+        font-family: system-ui, Segoe UI, Roboto, Ubuntu, sans-serif;
+        -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* ==================== HERO ==================== */
+      .hero{
+        position: relative;
+        min-height: 72vh;
+        display: grid;
+        place-items: center;
+        padding: clamp(24px, 5vw, 60px) 16px;
+        isolation: isolate; /* para superponer capa */
+        overflow: clip;
+      }
+      /* Fondo + overlay para legibilidad */
+      .hero::before{
+        content:"";
+        position:absolute; inset:0;
+        /* la imagen de fondo viene por variable */
+        background-image:
+          radial-gradient(1200px 600px at 50% 20%, rgba(0,0,0,.35), rgba(0,0,0,.7) 60%, rgba(0,0,0,.85)),
+          var(--hero-url);
+        background-position: center;
+        background-size: cover;
+        background-repeat: no-repeat;
+        z-index:-2;
+        transform: translateZ(0);
+      }
+      .hero::after{
+        /* Sutil viñeteado y línea superior */
+        content:"";
+        position:absolute; inset:0;
+        background:
+          radial-gradient(1200px 800px at 50% -20%, rgba(255,255,255,.05), transparent 60%),
+          linear-gradient(to bottom, rgba(255,255,255,.06), transparent 120px);
+        mix-blend-mode: screen;
+        z-index:-1;
+      }
+
+      .hero-inner{
+        max-width: 1100px; width: 100%;
+        display: grid; gap: clamp(16px, 2.5vw, 28px);
+        justify-items: center; text-align: center;
+      }
+
+      .hero-logo{
+        width: min(900px, 88vw);
+        height: auto;
+        filter: drop-shadow(0 10px 24px rgba(0,0,0,.55));
+        user-select: none;
+      }
+
+      .tagline{
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: .3px;
+        font-size: clamp(1.05rem, 1.2rem + .6vw, 1.6rem);
+        opacity: .95;
+      }
+
+      .cta-row{
+        display:flex; flex-wrap:wrap; gap: 12px;
+        justify-content:center; margin-top: 6px;
+      }
+      .cta{
+        display:inline-flex; align-items:center; gap:10px;
+        background: rgba(26,29,39,.82);
+        color: var(--fg); text-decoration:none; font-weight: 800;
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 12px;
+        padding: 11px 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.25);
+        transition: transform .12s ease, background .2s ease, border-color .2s ease;
+        will-change: transform;
+      }
+      .cta:hover{ transform: translateY(-1px); background:#232734; border-color:#41506a; }
+      .cta:active{ transform: translateY(0); }
+
+      /* ==================== PANELS ==================== */
+      .panels{
+        max-width: 1200px; margin: 28px auto 60px; padding: 0 16px;
+        display: grid; gap: 16px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      @media (max-width: 1000px){ .panels{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+      @media (max-width: 680px){ .panels{ grid-template-columns: 1fr; } }
+
+      .panel{
+        display:block; text-decoration:none; color:inherit;
+        background: var(--card-bg);
+        border: 1px solid #2a2a33;
+        border-radius: 16px;
+        padding: 18px 18px 16px;
+        box-shadow: var(--shadow);
+        transition: transform .12s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease;
+        outline: none;
+      }
+      .panel:hover{ transform: translateY(-2px); border-color:#3a4b67; background:#1a1d27; }
+      .panel:focus-visible{ box-shadow: 0 0 0 3px rgba(142,199,255,.35), var(--shadow); }
+
+      .panel h2{
+        margin: 0 0 8px; font-size: 1.1rem; letter-spacing:.4px; font-weight: 900; text-transform: uppercase;
+      }
+      .panel p{ margin:0; color: var(--muted); line-height: 1.55; }
+
+      /* Mini chips para coherencia visual */
+      .chips{ display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
+      .chip{
+        background: var(--chip); color: var(--fg);
+        border: 1px solid rgba(255,255,255,.1);
+        padding: 4px 8px; border-radius: 999px; font-weight: 700; font-size:.85rem;
+      }
+
+      /* ==================== FOOTER ==================== */
+      footer{
+        border-top: 1px solid rgba(255,255,255,.08);
+        max-width: 1200px; margin: 30px auto 40px; padding: 12px 16px 0;
+        color: var(--muted); font-size: .95rem; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      }
+      footer a{ color:inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,.25); }
+      footer a:hover{ border-bottom-style: solid; }
+
+      /* Motion-safe */
+      @media (prefers-reduced-motion: reduce){
+        .cta, .panel { transition: none; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ===== HERO ===== -->
+    <header class="hero" role="banner" aria-label="Portada Mitocards"
+            style={`--hero-url: url(${HERO_IMG});`}>
+      <div class="hero-inner">
+        <img src={LOGO_IMG} alt="MITOCARDS-WIKI" class="hero-logo" width="1600" height="400"
+             decoding="async" fetchpriority="high" />
+        <p class="tagline">Explora. Construye. Comparte.</p>
+        <nav class="cta-row" aria-label="Acciones principales">
+          {LINKS.map(l => <a class="cta" href={l.href} aria-label={l.title}>{l.title}</a>)}
+        </nav>
+      </div>
+    </header>
+
+    <!-- ===== PANELS ===== -->
+    <main class="panels" aria-label="Secciones">
+      {LINKS.map((l) => (
+        <a class="panel" href={l.href}>
+          <h2>{l.title}</h2>
+          <p>{l.desc}</p>
+          <div class="chips" aria-hidden="true">
+            {l.href === "/cartas/" && (
+              <>
+                <span class="chip">Filtros avanzados</span>
+                <span class="chip">Vista en cuadrícula</span>
+              </>
+            )}
+            {l.href === "/constructor/" && (
+              <>
+                <span class="chip">Xeno & Huecos</span>
+                <span class="chip">Sin duplicados</span>
+                <span class="chip">Exportar JSON</span>
+              </>
+            )}
+            {l.href === "/repositorio/" && (
+              <>
+                <span class="chip">Miniaturas</span>
+                <span class="chip">Descripción</span>
+              </>
+            )}
+          </div>
+        </a>
+      ))}
+    </main>
+
+    <footer>
+      <span>© {new Date().getFullYear()} Mitocards</span>
+      <span><a href="/cartas/">Catálogo</a> · <a href="/constructor/">Constructor</a> · <a href="/repositorio/">Repositorios</a></span>
+    </footer>
+  </body>
+</html>

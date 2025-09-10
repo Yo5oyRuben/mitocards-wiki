@@ -1,0 +1,49 @@
+---
+import { Image } from 'astro:assets';
+export interface Props { card: any }
+const { card } = Astro.props;
+
+const normId = (v: any) => String(v ?? "").trim().toLowerCase();
+const id = normId(card?.id ?? card?.slug ?? card?.nombre ?? card?.name);
+
+const nombre = card?.nombre ?? card?.name ?? id;
+
+const img =
+  card?.ilustracion
+  ?? card?.ilustracion_carta
+  ?? card?.imagen
+  ?? card?.image
+  ?? "/img/placeholder-card.png";
+---
+
+
+<div class="tile">
+  <a class="card-link" data-id={id} data-name={nombre} href="#">
+    <div class="card-4x3">
+      <Image
+        src={img}
+        alt={`Carta de ${nombre}`}
+        width={480}
+        height={360}
+        widths={[240, 360, 480]}
+        sizes="(max-width:640px) 50vw, 240px"
+        format="webp"
+        loading="lazy"
+        decoding="async"
+        style="width:100%;height:100%;object-fit:cover"
+      />
+    </div>
+  </a>
+  <h3 class="name">
+    {(card?.xeno ?? card?.coste ?? card?.costo ?? card?.costo_xeno ?? 0)} – {nombre}
+  </h3>
+
+  <style>
+    .tile { background:#1e1e24; border:1px solid #2a2a33; border-radius:14px; overflow:hidden; }
+    .card-4x3 { width:100%; aspect-ratio:4/3; background:#111; }
+    .card-4x3 img { width:100%; height:100%; object-fit:cover; display:block; }
+    .name { font-size:.95rem; margin:6px 8px 10px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  </style>
+</div>
+
+

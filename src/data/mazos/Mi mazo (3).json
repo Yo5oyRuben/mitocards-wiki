@@ -1,0 +1,17 @@
+{
+  "nombre": "Mi mazo",
+  "xenoMax": 35,
+  "huecosMax": 8,
+  "ids": [
+    "diablo",
+    "momia",
+    "arco-mitico",
+    "carnivor",
+    "fantasma",
+    "piramide",
+    "tormenta",
+    "trols-cunianos",
+    "brazalete-zanuba"
+  ],
+  "descripcion": "hoas"
+}

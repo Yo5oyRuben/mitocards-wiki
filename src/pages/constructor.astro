@@ -1,0 +1,718 @@
+---
+/**
+ * Constructor de mazos — Modal con filtrado avanzado
+ * - Carga catálogo desde /public/cards.json o /public/data/cards.json
+ * - Filtros por Tipo + Naturaleza condicional + Orden + Búsqueda
+ * - Validez: sin duplicados, Xeno <= máx, Huecos usados === Huecos máx
+ */
+const TITLE = "Constructor de mazos";
+import "../styles/globals.css";
+---
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>{TITLE}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style is:global>
+      :root {
+        --bg:#0e0f12; --fg:#eaeaea; --muted:#a0a0a0; --accent:#8ec7ff; --err:#f77;
+        --card-bg:#161922; --tile:#1a1d27; --chip:#2a2f3a; --ok:#7de37d; --ring:#3a4b67;
+      }
+      *{box-sizing:border-box}
+      body{background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Ubuntu,sans-serif}
+      h1{font-weight:800;letter-spacing:.3px;margin:24px 16px 8px}
+      .toolbar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:8px 16px 16px}
+      .tool{display:flex;gap:8px;align-items:center}
+      .tool label{color:var(--muted);font-size:.95rem}
+      input[type="text"],input[type="number"]{background:var(--tile);color:var(--fg);border:1px solid #2a2a33;border-radius:10px;padding:8px 10px;min-width:120px}
+      .chip{background:var(--chip);color:var(--fg);padding:6px 10px;border-radius:999px;font-weight:600}
+      .chip.bad{background:#3a2326;color:#ffb3b9}
+      .chip.ok{background:#233a2a;color:#b7ffb3}
+      .spacer{flex:1}
+      .btn{background:#2a2f3a;color:var(--fg);border:1px solid #3a3f4a;padding:8px 12px;border-radius:10px;cursor:pointer}
+      .btn:hover{outline:1px solid #44516a}
+      .btn[disabled]{opacity:.55;cursor:not-allowed;filter:grayscale(.3)}
+
+      /* Layout principal */
+      .main-wrap{padding:0 16px 24px}
+      .main{background:var(--card-bg);border:1px solid #2a2a33;border-radius:16px;padding:12px;position:relative}
+      .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+      @media (max-width:1200px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media (max-width:820px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+      .slot,.tile{background:var(--tile);border:1px solid #2a2a33;border-radius:14px;overflow:hidden}
+      .slot{position:relative;min-height:190px;display:flex;align-items:center;justify-content:center}
+      .slot img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+      .slot .meta{position:absolute;inset:auto 8px 8px 8px;display:flex;justify-content:space-between;font-weight:700}
+      .slot.empty{outline:1px dashed #3a3a48;background:transparent;border-style:dashed}
+      .slot .btn-del{position:absolute;top:6px;right:6px;background:#432;border:1px solid #744;border-radius:999px;padding:2px 7px;cursor:pointer}
+      .slot .add{display:flex;align-items:center;gap:8px;background:#263041;border:1px solid var(--ring);color:#cfe6ff;padding:12px 16px;border-radius:999px;cursor:pointer}
+
+      .tile{display:flex;flex-direction:column}
+      .tile .card-4x3{position:relative;width:100%;aspect-ratio:4/3;overflow:hidden;border-radius:12px;background:#111}
+  .tile .card-4x3 img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .tile .meta{position:absolute;left:8px;right:8px;bottom:8px;display:flex;justify-content:space-between;align-items:flex-end;font-weight:700}
+  .tile .name-badge{background:rgba(0,0,0,.65);color:#fff;font-weight:600;font-size:.95rem;padding:4px 8px;border-radius:8px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile .chip{background:#2a2f3a;color:#eaeaea;padding:4px 8px;border-radius:999px;font-weight:700;font-size:.95rem}
+
+      .warn{margin:8px 16px;padding:10px 12px;border-radius:10px;background:#3a2326;border:1px solid #744;color:#ffd0d4;font-weight:600}
+
+      /* Modal centrado */
+      .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:1000}
+      .overlay.open{display:flex}
+      .picker{width:min(1200px,92vw);height:min(85vh,92vh);background:var(--card-bg);border:1px solid #2a2a33;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;padding:14px}
+      .picker .bar{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+      .picker .bar .grow{flex:1}
+      .picker .bar input{width:100%;font-size:1.1rem;padding:14px 14px;border-radius:12px;border:1px solid #2a2a33;background:var(--tile);color:var(--fg)}
+      .picker .bar .info{color:var(--muted);font-weight:600}
+      .picker .grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;flex:1;overflow:auto;padding-right:4px;align-items:start;grid-auto-rows:max-content}
+      @media (max-width:1200px){.picker .grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media (max-width:820px){.picker .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+      /* Selects del modal */
+      .picker .bar .tool select{
+        padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+        background:rgba(26,29,39,1);color:#fff;appearance:none
+      }
+      .picker .bar .tool select option{background:rgba(26,29,39,1);color:#fff}
+      .picker .bar .tool[hidden]{display:none!important}
+      .deck-notes {
+  margin-top: 20px;
+  background: var(--card-bg);
+  border: 1px solid #2a2a33;
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.deck-notes label {
+  font-weight: 700;
+  font-size: 1rem;
+  opacity: .9;
+}
+/* Badge del nombre en la esquina inferior izquierda */
+.slot .meta {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.slot .name-badge {
+  background: rgba(0,0,0,0.65); /* fondo oscuro translúcido */
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 4px 8px;
+  border-radius: 8px;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+#deckDesc {
+  width: 100%;
+  min-height: 160px;       /* caja más grande y fija */
+  resize: vertical;
+  background: var(--tile);
+  color: var(--fg);
+  border: 1px solid #2a2a33;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+
+
+
+    </style>
+  </head>
+  <body>
+
+    <div id="top-warn" class="warn" style="display:none"></div>
+<nav class="back-nav">
+  <a href="/" class="back-btn">Volver al menú</a>
+</nav>
+
+    <h1>Constructor de mazos</h1>
+
+    <div class="toolbar">
+      <div class="tool"><label for="deckName">Nombre</label><input id="deckName" type="text" value="Mi mazo" /></div>
+      <div class="tool"><label for="xenoMax">Xeno máx</label><input id="xenoMax" type="number" value="35" min="0" step="1" /></div>
+      <div class="tool"><label for="huecosMax">Huecos máx</label><input id="huecosMax" type="number" value="8" min="1" step="1" /></div>
+
+      <div class="spacer"></div>
+
+      <span id="countHuecos" class="chip">0/8</span>
+      <span id="countXeno" class="chip">Xeno 0/35</span>
+      <span id="dupState" class="chip">Sin duplicados</span>
+      <span id="validState" class="chip bad">INVÁLIDO</span>
+
+      <button id="btnImport" class="btn">Importar</button>
+      <button id="btnClear" class="btn">Vaciar</button>
+      <button id="btnExport" class="btn" disabled>Guardar</button>
+    </div>
+
+    <div class="main-wrap">
+      <main class="main">
+        <div id="slots" class="grid"></div>
+        <section class="deck-notes">
+  <label for="deckDesc">Descripción del mazo</label>
+  <textarea id="deckDesc" rows="4" placeholder="Cómo se juega, sinergias, combos, órdenes de salida…"></textarea>
+</section>
+
+      </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="overlay" class="overlay" aria-hidden="true">
+      <div id="picker" class="picker" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+        <div class="bar">
+          <div class="tool">
+            <label for="p-sort">Ordenar por</label>
+            <select id="p-sort">
+              <option value="xeno-asc">Xeno (ascendente)</option>
+              <option value="xeno-desc">Xeno (descendente)</option>
+              <option value="alpha">Orden alfabético</option>
+            </select>
+          </div>
+
+          <div class="tool">
+            <label for="p-filter">Tipo</label>
+            <select id="p-filter">
+              <option value="all">Todas</option>
+              <option value="criatura">Criaturas</option>
+              <option value="hechizo">Hechizos</option>
+              <option value="estructura">Estructuras</option>
+            </select>
+          </div>
+
+          <div class="tool" id="p-tool-nature" hidden>
+            <label for="p-subfilter" id="p-subfilter-label">Naturaleza</label>
+            <select id="p-subfilter"></select>
+          </div>
+
+          <div class="grow">
+            <input id="pq" type="text" placeholder="Buscar por nombre…" aria-label="Filtrar cartas" />
+          </div>
+
+          <span id="pcount" class="info">–</span>
+          <button id="pclose" class="btn" aria-label="Cerrar selector">Cerrar</button>
+        </div>
+
+        <div id="presults" class="grid" role="list"></div>
+      </div>
+    </div>
+
+    <script type="module">
+      // ================= Helpers =================
+      const normId = (v) => String(v ?? "").trim().toLowerCase();
+      const abs = (p) => (typeof p === "string" && p && !p.startsWith("/")) ? "/" + p.replace(/^(\.\/)?/, "") : p;
+      const collator  = new Intl.Collator('es', { sensitivity: 'base' });
+      const normalizeStr = (s = "") => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+      const normalizeCard = (c) => ({
+        ...c,
+        id: normId(c.id ?? c.slug ?? c.nombre ?? c.name),
+        nombre: c.nombre ?? c.name ?? c.titulo ?? c.title ?? "",
+        ilustracion: abs(c.ilustracion ?? c.ilustracion_carta ?? c.imagen ?? c.image ?? c.picture ?? ""),
+        ilustracion_carta: abs(c.ilustracion_carta ?? c.ilustracion ?? c.imagen ?? c.image ?? c.picture ?? ""),
+        xeno: Number(c.xeno ?? c.coste ?? c.costo ?? c.costo_xeno ?? c.cost ?? 0) || 0,
+        huecos: Number(c.huecos ?? c.espacios ?? c.slots ?? 0),
+        // Campos para filtros/orden
+        tipo: String(c.tipo ?? "").toLowerCase(),
+        naturaleza: String(c.naturaleza ?? "").toLowerCase(),
+        ataque: (c.ataque === "∞" || c.ataque === "infinito") ? 9999 : Number(c.ataque ?? 0),
+        salud:  (c.salud  === "∞" || c.salud  === "infinito") ? 9999 : Number(c.salud  ?? 0),
+      });
+
+      const showWarn = (msg) => {
+        const el = document.getElementById("top-warn");
+        el.textContent = msg; el.style.display = "block";
+      };
+      // ===== Draft en localStorage (para volver del detalle sin perder nada) =====
+const DRAFT_KEY = "mitocards.deckDraft.v1";
+
+const saveDraft = () => {
+  try {
+    const payload = {
+      nombre: document.getElementById("deckName").value,
+      xenoMax: Number(elXenoMax.value) || 0,
+      huecosMax: Number(elHueMax.value) || 0,
+      ids,
+       descripcion: elDesc.value || ""
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  } catch {}
+};
+
+const loadDraft = () => {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (Array.isArray(d.ids)) ids = d.ids.map(s => String(s).toLowerCase());
+    if (d.nombre) document.getElementById("deckName").value = String(d.nombre);
+    if (Number.isFinite(+d.xenoMax))   elXenoMax.value = String(+d.xenoMax);
+    if (Number.isFinite(+d.huecosMax)) elHueMax.value = String(+d.huecosMax);
+    if (typeof d.descripcion === "string" || typeof d.description === "string") {
+     elDesc.value = String(d.descripcion ?? d.description);
+   }
+    return true;
+  } catch { return false; }
+};
+
+
+      // ================= Carga catálogo =================
+      async function loadCatalog() {
+        const base = (import.meta.env?.BASE_URL ?? "/").replace(/\/+$/, "");
+        const candidates = [`${base}/cards.json`, `${base}/data/cards.json`, "/cards.json", "/data/cards.json"];
+        for (const url of candidates) {
+          try {
+            const res = await fetch(url, { cache: "no-store" });
+            if (res.ok) {
+              const json = await res.json();
+              if (Array.isArray(json) && json.length) return json.map(normalizeCard);
+            }
+          } catch {}
+        }
+        return [];
+      }
+
+      // ================= Estado & refs =================
+      let catalog = [];
+      let ids = []; // lista de ids (string)
+
+      // Top UI
+      const elXenoMax  = document.getElementById("xenoMax");
+      const elHueMax   = document.getElementById("huecosMax");
+      const elSlots    = document.getElementById("slots");
+      const elCtnXeno  = document.getElementById("countXeno");
+      const elCtnHue   = document.getElementById("countHuecos");
+      const elDup      = document.getElementById("dupState");
+      const elValid    = document.getElementById("validState");
+      const btnImport  = document.getElementById("btnImport");
+      const btnExport  = document.getElementById("btnExport");
+      const btnClear   = document.getElementById("btnClear");
+      const elDesc    = document.getElementById("deckDesc");
+
+
+      document.getElementById("deckName").addEventListener("input", saveDraft);
+elXenoMax.addEventListener("change", saveDraft);
+elHueMax.addEventListener("change", saveDraft);
+elDesc.addEventListener("input", saveDraft);
+
+
+      // Modal refs
+      const overlay   = document.getElementById("overlay");
+      const pQ        = document.getElementById("pq");
+      const pClose    = document.getElementById("pclose");
+      const pCount    = document.getElementById("pcount");
+      const pResults  = document.getElementById("presults");
+      const pSort     = document.getElementById("p-sort");
+      const pFilter   = document.getElementById("p-filter");
+      const pSubTool  = document.getElementById("p-tool-nature");
+      const pSubSel   = document.getElementById("p-subfilter");
+      const pSubLabel = document.getElementById("p-subfilter-label");
+
+      // ================= Utilidades de mazo =================
+      const keyOf = (c) => String(c.id ?? c.slug ?? c.nombre ?? c.name ?? "").trim().toLowerCase();
+      const valueXeno = (c) => Number(c.xeno ?? 0) || 0;
+      const valueHuecos = (c) => {
+        const n = Number(c.huecos ?? c.espacios ?? c.slots ?? 0);
+        return Number.isFinite(n) ? n : 0;
+      };
+      const displayName = (c) => (c.nombre ?? c.name ?? keyOf(c));
+
+      const computeXenoTotal = (ids) => {
+        const idx = new Map(catalog.map(c => [keyOf(c), valueXeno(c)]));
+        return ids.reduce((a, id) => a + (idx.get(String(id).toLowerCase()) ?? 0), 0);
+      };
+      const computeHuecosTotal = (ids) => {
+        const idx = new Map(catalog.map(c => [keyOf(c), valueHuecos(c)]));
+        return ids.reduce((a, id) => a + (idx.get(String(id).toLowerCase()) ?? 0), 0);
+      };
+
+      const isValidDeck = (ids, xenoMax, huecosMax) => {
+        const dupFree    = new Set(ids).size === ids.length;
+        const xenoTotal  = computeXenoTotal(ids);
+        const huecosUsed = computeHuecosTotal(ids);
+        const xenoOk     = xenoTotal <= xenoMax;
+        const huecosOk   = huecosUsed === huecosMax;
+        return { dupFree, xenoOk, huecosOk, xenoTotal, huecosUsed, valid: dupFree && xenoOk && huecosOk };
+      };
+
+      // ================= Modal: subfiltro/orden dinámicos =================
+      function setOptions(select, opts) {
+        select.innerHTML = "";
+        for (const [value, text] of opts) {
+          const opt = document.createElement("option");
+          opt.value = value; opt.textContent = text; select.appendChild(opt);
+        }
+      }
+      function ensureOption(select, value, text) {
+        if (![...select.options].some(o => o.value === value)) {
+          const opt = document.createElement("option");
+          opt.value = value; opt.textContent = text; select.appendChild(opt);
+        }
+      }
+      function removeOption(select, value) {
+        const idx = [...select.options].findIndex(o => o.value === value);
+        if (idx >= 0) select.remove(idx);
+      }
+
+      function refreshPickerSubfilter() {
+        const type = pFilter.value;
+        if (type === "criatura") {
+          pSubLabel.textContent = "Naturaleza (criatura)";
+          setOptions(pSubSel, [
+            ["all","Todas"], ["básica","Básica"], ["vanguardia","Vanguardia"],
+            ["aguante","Aguante"], ["mágica","Mágica"],
+          ]);
+          pSubTool.hidden = false;
+        } else if (type === "hechizo") {
+          pSubLabel.textContent = "Naturaleza (hechizo)";
+          setOptions(pSubSel, [
+            ["all","Todas"], ["daño","Daño"], ["combo","Combo"], ["especial","Especial"],
+          ]);
+          pSubTool.hidden = false;
+        } else {
+          pSubTool.hidden = true;
+          setOptions(pSubSel, [["all","Todas"]]);
+        }
+        pSubSel.value = "all";
+      }
+
+      function refreshPickerSortOptions() {
+        const type = pFilter.value;
+        if (type === "criatura") {
+          ensureOption(pSort, "dmg-desc", "Daño (descendente)");
+          ensureOption(pSort, "hp-desc",  "Salud (descendente)");
+        } else {
+          if (["dmg-desc", "hp-desc"].includes(pSort.value)) pSort.value = "xeno-asc";
+          removeOption(pSort, "dmg-desc");
+          removeOption(pSort, "hp-desc");
+        }
+      }
+
+      // ================= Modal: render listado =================
+      const renderPicker = (query = "", sort = "xeno-asc", filter = "all", sub = "all") => {
+        const q = normalizeStr(query.trim());
+
+        // 1) filtrar
+        let list = catalog.filter(c => {
+          const t  = c.tipo || "";
+          const nt = c.naturaleza || "";
+          const name = c.nombre || "";
+
+          const typeOk   = (filter === "all" || t === filter);
+          const needsSub = (t === "criatura" && filter === "criatura") || (t === "hechizo" && filter === "hechizo");
+          const subOk    = !needsSub || sub === "all" || nt === sub;
+          const nameOk   = q === "" || normalizeStr(name).includes(q) ||
+                           normalizeStr(String(c.texto ?? c.descripcion ?? c.description ?? "")).includes(q);
+
+          return typeOk && subOk && nameOk;
+        });
+
+        // 2) ordenar
+        list.sort((a, b) => {
+          if (sort === "alpha") return collator.compare(a.nombre, b.nombre);
+          if (sort === "dmg-desc") {
+            const da = Number(a.ataque) || 0, db = Number(b.ataque) || 0;
+            const xa = Number(a.xeno)   || 0, xb = Number(b.xeno)   || 0;
+            return (db - da) || (xb - xa) || collator.compare(a.nombre, b.nombre);
+          }
+          if (sort === "hp-desc") {
+            const ha = Number(a.salud) || 0, hb = Number(b.salud) || 0;
+            const xa = Number(a.xeno)  || 0, xb = Number(b.xeno)  || 0;
+            return (hb - ha) || (xb - xa) || collator.compare(a.nombre, b.nombre);
+          }
+          // xeno asc/desc por defecto
+          const xa = Number(a.xeno) || 0, xb = Number(b.xeno) || 0;
+          return sort === "xeno-desc"
+            ? (xb - xa) || collator.compare(a.nombre, b.nombre)
+            : (xa - xb) || collator.compare(a.nombre, b.nombre);
+        });
+
+        // 3) pintar
+        pResults.innerHTML = "";
+        for (const c of list) {
+          const a = document.createElement("a");
+          a.className = "tile";
+          a.href = "#";
+          a.dataset.id      = keyOf(c);
+          a.dataset.type    = c.tipo || "";
+          a.dataset.nature  = c.naturaleza || "";
+          a.dataset.xeno    = String(Number(c.xeno) || 0);
+          a.dataset.ataque  = String(Number(c.ataque) || 0);
+          a.dataset.salud   = String(Number(c.salud)  || 0);
+          a.dataset.name    = c.nombre || "";
+
+          a.innerHTML = `
+            <div class="card-4x3">
+              <img
+                src="${c.ilustracion || c.ilustracion_carta || "/img/placeholder-card.png"}"
+                alt="Carta de ${displayName(c)}"
+                loading="lazy" decoding="async" fetchpriority="low"
+                width="480" height="360"
+                sizes="(max-width:1200px) 33vw, (max-width:820px) 50vw, 25vw"
+                style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"
+                onerror="this.onerror=null;this.src='/img/placeholder-card.png'"
+              />
+              <div class="meta">
+                <span class="name-badge" title="${displayName(c)}">${displayName(c)}</span>
+                <span class="chip">${c.xeno ?? 0}</span>
+              </div>
+            </div>
+          `;
+          a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            addCard(keyOf(c));
+            const huecosMax = Number(elHueMax.value) || 0;
+            if (computeHuecosTotal(ids) >= huecosMax) closePicker();
+          });
+          pResults.appendChild(a);
+        }
+        pCount.textContent = `${list.length} cartas`;
+      };
+
+      // ================= Modal: abrir/cerrar + eventos =================
+      const openPicker = () => {
+        overlay.classList.add("open");
+        overlay.setAttribute("aria-hidden","false");
+        document.body.style.overflow="hidden";
+
+        // Estado inicial filtros
+        pQ.value = "";
+        pFilter.value = "all";
+        pSort.value = "xeno-asc";
+        refreshPickerSubfilter();
+        refreshPickerSortOptions();
+
+        renderPicker("", pSort.value, pFilter.value, pSubSel.value || "all");
+        pQ.focus();
+      };
+      const closePicker = () => {
+        overlay.classList.remove("open");
+        overlay.setAttribute("aria-hidden","true");
+        document.body.style.overflow="";
+      };
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) closePicker(); });
+      document.addEventListener("keydown", (e)=>{ if (e.key === "Escape" && overlay.classList.contains("open")) closePicker(); });
+      pClose.addEventListener("click", closePicker);
+
+      // Filtros en vivo
+      pSort.addEventListener("change", () => renderPicker(pQ.value, pSort.value, pFilter.value, pSubSel.value || "all"));
+      pFilter.addEventListener("change", () => {
+        refreshPickerSubfilter();
+        refreshPickerSortOptions();
+        renderPicker(pQ.value, pSort.value, pFilter.value, pSubSel.value || "all");
+      });
+      pSubSel.addEventListener("change", () => renderPicker(pQ.value, pSort.value, pFilter.value, pSubSel.value || "all"));
+      pQ.addEventListener("input", () => renderPicker(pQ.value, pSort.value, pFilter.value, pSubSel.value || "all"));
+      // Enter = añadir la primera coincidencia
+      pQ.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        // Reaprovecha el pipeline de render para calcular la lista sin pintar de nuevo
+        const q = pQ.value, sort = pSort.value, filter = pFilter.value, sub = pSubSel.value || "all";
+        let list = catalog.filter(c => {
+          const t=c.tipo||"", nt=c.naturaleza||"", name=c.nombre||"";
+          const typeOk=(filter==="all"||t===filter);
+          const needsSub=(t==="criatura"&&filter==="criatura")||(t==="hechizo"&&filter==="hechizo");
+          const subOk=!needsSub||sub==="all"||nt===sub;
+          const nameOk=q.trim()===""||normalizeStr(name).includes(normalizeStr(q))||
+                       normalizeStr(String(c.texto??c.descripcion??c.description??"")).includes(normalizeStr(q));
+          return typeOk&&subOk&&nameOk;
+        });
+        list.sort((a,b)=>{
+          if (sort==="alpha") return collator.compare(a.nombre,b.nombre);
+          if (sort==="dmg-desc") return (b.ataque-a.ataque)||(b.xeno-a.xeno)||collator.compare(a.nombre,b.nombre);
+          if (sort==="hp-desc")  return (b.salud -a.salud )||(b.xeno-a.xeno)||collator.compare(a.nombre,b.nombre);
+          return sort==="xeno-desc"?(b.xeno-a.xeno)||collator.compare(a.nombre,b.nombre):(a.xeno-b.xeno)||collator.compare(a.nombre,b.nombre);
+        });
+        if (list.length) {
+          addCard(keyOf(list[0]));
+          const huecosMax = Number(elHueMax.value) || 0;
+          if (computeHuecosTotal(ids) >= huecosMax) closePicker();
+        }
+      });
+
+      // ================= Render slots =================
+      const renderSlots = () => {
+        elSlots.innerHTML = "";
+
+        ids.forEach((id, i) => {
+          const c = catalog.find(x => keyOf(x) === String(id).toLowerCase());
+          const nombre = c ? displayName(c) : `[desconocida] ${id}`;
+          const img = (c?.ilustracion || c?.ilustracion_carta || "/img/placeholder-card.png");
+          const xeno = c ? valueXeno(c) : 0;
+
+          const div = document.createElement("div");
+          div.className = "slot";
+          div.dataset.index = String(i);
+          div.innerHTML = `
+            <button class="btn-del" title="Quitar">✕</button>
+            <a class="card-link" href="/cartas/${keyOf(c)}/?from=constructor">
+  <img
+    src="${img}"
+    alt="Carta de ${nombre}"
+    loading="lazy"
+    decoding="async"
+    fetchpriority="low"
+    width="480" height="360"
+    sizes="(max-width:1200px) 33vw, (max-width:820px) 50vw, 25vw"
+    style="width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;display:block"
+    onerror="this.onerror=null;this.src='/img/placeholder-card.png'"
+  />
+</a>
+
+            <div class="meta">
+  <span class="name-badge">${nombre}</span>
+  <span class="chip">${xeno}</span>
+</div>
+
+          `;
+          div.querySelector(".card-link")?.addEventListener("click", () => saveDraft());
+          div.querySelector(".btn-del")?.addEventListener("click", () => removeIndex(i));
+          elSlots.appendChild(div);
+        });
+
+        // Botón "+"
+        const div = document.createElement("div");
+        div.className = "slot empty";
+        const btn = document.createElement("button");
+        btn.className = "add";
+        btn.textContent = "➕ Añadir carta";
+        btn.addEventListener("click", () => {
+          const huecosMax = Number(elHueMax.value) || 0;
+          if (computeHuecosTotal(ids) >= huecosMax) { alert("No caben más huecos en el mazo."); return; }
+          openPicker();
+        });
+        div.appendChild(btn);
+        elSlots.appendChild(div);
+      };
+
+      // ================= Recompute =================
+      const recompute = () => {
+        pCount.textContent = `${catalog.length} cartas`;
+        const xenoMax   = Number(elXenoMax.value) || 0;
+        const huecosMax = Number(elHueMax.value) || 0;
+        const { dupFree, xenoOk, huecosOk, xenoTotal, huecosUsed, valid } = isValidDeck(ids, xenoMax, huecosMax);
+
+        elCtnXeno.textContent = `Xeno ${xenoTotal}/${xenoMax}`;
+        elCtnHue.textContent  = `${huecosUsed}/${huecosMax}`;
+        elDup.textContent = dupFree ? "Sin duplicados" : "Con duplicados";
+        elDup.className = `chip ${dupFree ? "ok" : "bad"}`;
+        elValid.textContent = valid ? "VÁLIDO" : "INVÁLIDO";
+        elValid.className = `chip ${valid ? "ok" : "bad"}`;
+        btnExport.disabled = !valid;
+        btnExport.title = valid ? "Guardar mazo" : "El mazo es inválido (revisa duplicados / Xeno / Huecos)";
+        saveDraft();
+      };
+
+      // ================= Mutadores =================
+      const addCard = (id) => {
+        const c = catalog.find(x => keyOf(x) === String(id).toLowerCase());
+        if (!c) return;
+        const huecosMax = Number(elHueMax.value) || 0;
+        const used = computeHuecosTotal(ids);
+        const next = used + valueHuecos(c);
+        if (next > huecosMax) { alert("No caben más huecos en el mazo."); return; }
+        if (ids.includes(keyOf(c))) { alert("No se permiten duplicados."); return; }
+        ids = [...ids, keyOf(c)];
+        renderSlots(); recompute();
+      };
+      const removeIndex = (i) => { ids = ids.filter((_, idx) => idx !== i); renderSlots(); recompute(); };
+
+      // ================= Import/Export/Vaciar =================
+      btnExport.addEventListener("click", () => {
+        const payload = {
+          nombre: document.getElementById("deckName").value,
+          xenoMax: Number(elXenoMax.value)||0,
+          huecosMax: Number(elHueMax.value)||0,
+          ids,
+          descripcion: elDesc.value || ""
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = (payload.nombre?.trim() || "mazo") + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        localStorage.removeItem(DRAFT_KEY); // opcional: si prefieres que al guardar se borre el borrador
+
+      });
+
+      const pickIdsFromUnknown = (obj) => {
+        if (!obj) return [];
+        const norm = (v) => String(v ?? "").trim().toLowerCase();
+        if (Array.isArray(obj.ids)) return obj.ids.map(norm);
+        const keys = ["cards","deck","items","lista"];
+        for (const k of keys) {
+          if (Array.isArray(obj[k])) {
+            return obj[k].map(x => typeof x === "string" ? norm(x) : norm(x?.id ?? x?.slug ?? x?.nombre ?? x?.name));
+          }
+        }
+        if (Array.isArray(obj)) return obj.map(x => typeof x === "string" ? norm(x) : norm(x?.id ?? x?.slug ?? x?.nombre ?? x?.name));
+        return [];
+      };
+
+      btnImport.addEventListener("click", async () => {
+        const inp = document.createElement("input");
+        inp.type = "file"; inp.accept = "application/json";
+        inp.onchange = async () => {
+          const file = inp.files?.[0]; if(!file) return;
+          const txt = await file.text();
+          try {
+            const data = JSON.parse(txt);
+            const importedIds = pickIdsFromUnknown(data);
+            if (importedIds.length) {
+              ids = importedIds;
+            } else if (Array.isArray(data.ids)) {
+              ids = data.ids.map(s => String(s).toLowerCase());
+            } else {
+              alert("No se encontraron cartas en el archivo (claves esperadas: ids | cards | deck | items).");
+            }
+            if (data.nombre) document.getElementById("deckName").value = String(data.nombre);
+            if (Number.isFinite(+data.xenoMax))   elXenoMax.value = String(+data.xenoMax);
+            if (Number.isFinite(+data.huecosMax)) elHueMax.value = String(+data.huecosMax);
+            if (typeof data.descripcion === "string" || typeof data.description === "string") {
+   elDesc.value = String(data.descripcion ?? data.description);
+ }
+            renderSlots(); recompute();
+          } catch(e){ alert("Archivo inválido."); }
+        };
+        inp.click();
+      });
+
+      btnClear.addEventListener("click", () => {
+  if (!confirm("Vaciar mazo actual?")) return;
+  ids = [];
+  elDesc.value = "";               // ⬅️ borra también la descripción
+  renderSlots();
+  recompute();
+  localStorage.removeItem(DRAFT_KEY); // ⬅️ opcional: limpia el draft guardado
+});
+
+
+
+      // ================= Boot =================
+      (async () => {
+        catalog = await loadCatalog();
+        if (!catalog.length) showWarn("No se pudo cargar el catálogo (0 cartas). Coloca una copia en /public/cards.json o /public/data/cards.json.");
+        loadDraft();
+        renderSlots(); recompute();
+        console.log("[catalog]", catalog.length);
+      })();
+    </script>
+  </body>
+</html>
+

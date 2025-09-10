@@ -1,0 +1,13 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import CardGrid from "../../components/CardGrid.astro";
+import cards from "../../data/cards.json";
+---
+
+<Layout title="Cartas" showBack>
+  <div class="container mx-auto px-4 py-6">
+    <h1 class="text-2xl font-bold mb-4">Cartas</h1>
+    <CardGrid items={cards} />
+  </div>
+</Layout>
+

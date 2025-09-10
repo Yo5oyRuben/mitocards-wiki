@@ -1,22 +1,49 @@
+---
+import "../styles/globals.css";
+export interface Props { title?: string; showBack?: boolean }
+const { title = "Mitocards", showBack = false } = Astro.props;
+---
+
+
 <!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro Basics</title>
-	</head>
-	<body>
-		<slot />
-	</body>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+  </head>
+
+  <body>
+    <header class="site-header">
+      {showBack && (
+        <nav class="back-nav">
+          <a href="/" class="back-btn" aria-label="Volver al menú principal">← Volver al menú</a>
+        </nav>
+      )}
+    </header>
+
+    <main class="site-main">
+      <slot />
+    </main>
+  </body>
 </html>
 
 <style>
-	html,
-	body {
-		margin: 0;
-		width: 100%;
-		height: 100%;
-	}
+  html, body { margin:0; width:100%; height:100%; }
+
+  .site-header { position: relative; z-index: 1000; }
+  .back-nav { position: sticky; top: 12px; padding: 8px 12px; }
+  .back-btn {
+    display:inline-flex; align-items:center; gap:8px;
+    padding:8px 12px; border-radius:10px;
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.08);
+    color:inherit; text-decoration:none;
+    backdrop-filter: blur(4px);
+    transition: background .15s, border-color .15s, transform .05s;
+  }
+  .back-btn:hover { background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.28); }
+  .back-btn:active { transform: translateY(1px); }
 </style>

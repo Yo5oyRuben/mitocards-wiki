@@ -1,0 +1,422 @@
+---
+import { Image } from 'astro:assets';
+export interface Props { items: any[] }
+const { items } = Astro.props;
+---
+
+
+<section class="card-browser" data-component="card-browser">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="tool">
+      <label for="sort">Ordenar por</label>
+      <select id="sort">
+        <option value="xeno-asc">Xeno (ascendente)</option>
+        <option value="xeno-desc">Xeno (descendente)</option>
+        <option value="alpha">Orden alfabético</option>
+      </select>
+    </div>
+
+    <div class="tool">
+      <label for="filter">Tipo</label>
+      <select id="filter">
+        <option value="all">Todas</option>
+        <option value="criatura">Criaturas</option>
+        <option value="hechizo">Hechizos</option>
+        <option value="estructura">Estructuras</option>
+      </select>
+    </div>
+
+    <!-- Subfiltro de naturaleza: se muestra solo para Criaturas o Hechizos -->
+    <div class="tool" id="tool-nature" hidden>
+      <label for="subfilter" id="subfilter-label">Naturaleza</label>
+      <select id="subfilter"></select>
+    </div>
+
+    <div class="tool tool-search">
+      <label for="search">Buscar</label>
+      <input id="search" type="search" placeholder="Nombre exacto o parcial…" />
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid-cards">
+    {items.map((item) => {
+      const img   = item.ilustracion ?? item.ilustracion_carta; // _dibujo primero
+      const tipo  = (item.tipo || "").toLowerCase();             // "criatura|hechizo|estructura"
+      const natura = (item.naturaleza || "").toLowerCase();      // basica|magica|vanguardia|aguante|daño|combo|especial|""
+      return (
+        <a
+          href={`/cartas/${item.id}/`}
+          class="card-link"
+          data-type={tipo}
+          data-nature={natura}
+          data-xeno={item.xeno}
+          data-name={item.nombre}
+          data-ataque={(item.ataque === "∞" || item.ataque === "infinito") ? 9999 : (item.ataque ?? 0)}
+          data-salud={(item.salud === "∞" || item.salud === "infinito") ? 9999 : (item.salud ?? 0)}
+        >
+          <div class="card-4x3">
+            <Image
+              src={img ?? "/img/placeholder-card.png"}
+              alt={`Carta de ${item.nombre}`}
+              width={480}             
+              height={360}
+              widths={[240, 360, 480, 640]}
+              sizes="(max-width:768px) 50vw, (max-width:1200px) 33vw, 240px"
+    format="webp"
+    loading="lazy"
+    decoding="async"
+    style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+            />
+          <div class="meta">
+              <span class="name-badge">{item.nombre}</span>
+              <span class="chip">{item.xeno}</span>
+            </div>
+          </div>
+        </a>
+      );
+    })}
+  </div>
+
+  <script is:inline>
+(() => {
+  const root = document.querySelector('[data-component="card-browser"]');
+  if (!root) return;
+
+  const grid      = root.querySelector('.grid-cards');
+  const cards     = Array.from(grid.querySelectorAll('.card-link'));
+  // Guardar estado antes de navegar (captura click, ctrl+click y middle-click)
+cards.forEach(a => {
+  a.addEventListener('pointerdown', saveBrowserState);
+});
+
+  const sortSel   = root.querySelector('#sort');
+  const filterSel = root.querySelector('#filter');
+
+  const subTool   = root.querySelector('#tool-nature');
+  const subSel    = root.querySelector('#subfilter');
+  const subLabel  = root.querySelector('#subfilter-label');
+
+  const searchInp = root.querySelector('#search');
+  // ===== Persistencia de estado del explorador =====
+const STORAGE_KEY = "mitocards.cardBrowser.v1";
+
+function saveBrowserState() {
+  try {
+    const state = {
+      sort:   sortSel.value,
+      filter: filterSel.value,
+      sub:    subTool.hidden ? 'all' : (subSel.value || 'all'),
+      search: searchInp?.value ?? ""
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+/**
+ * Devuelve true si había estado guardado y se aplicó,
+ * false si no había nada que cargar.
+ */
+function loadBrowserState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+
+    // 1) Ajusta tipo/orden/búsqueda
+    if (s.filter) filterSel.value = s.filter;
+    if (s.sort)   sortSel.value   = s.sort;
+    if (typeof s.search === "string") { searchInp.value = s.search; }
+
+    // 2) Reconstruye el subfiltro según el tipo guardado
+    refreshSubfilter();
+    if (s.sub) subSel.value = s.sub;
+
+    // 3) Opciones de orden dependientes del tipo
+    refreshSortOptions();
+
+    return true;
+  } catch { return false; }
+}
+
+
+  // ✅ una sola vez
+  const collator  = new Intl.Collator('es', { sensitivity: 'base' });
+  const normalize = (s = "") => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  function setOptions(select, opts) {
+    select.innerHTML = "";
+    for (const [value, text] of opts) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.appendChild(opt);
+    }
+  }
+  function ensureOption(select, value, text) {
+  if (![...select.options].some(o => o.value === value)) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = text;
+    select.appendChild(opt);
+  }
+}
+function removeOption(select, value) {
+  const idx = [...select.options].findIndex(o => o.value === value);
+  if (idx >= 0) select.remove(idx);
+}
+function refreshSortOptions() {
+  const type = filterSel.value;
+
+  if (type === 'criatura') {
+    ensureOption(sortSel, 'dmg-desc', 'Daño (descendente)');
+    ensureOption(sortSel, 'hp-desc',  'Salud (descendente)');
+  } else {
+    // Si NO es criatura, quitamos esas opciones.
+    if (['dmg-desc', 'hp-desc'].includes(sortSel.value)) {
+      sortSel.value = 'xeno-asc'; // vuelve a una opción existente
+    }
+    removeOption(sortSel, 'dmg-desc');
+    removeOption(sortSel, 'hp-desc');
+  }
+}
+
+
+  function refreshSubfilter() {
+    const type = filterSel.value;
+    if (type === 'criatura') {
+      subLabel.textContent = 'Naturaleza (criatura)';
+      setOptions(subSel, [
+        ['all', 'Todas'],
+        ['básica','Básica'],
+        ['vanguardia','Vanguardia'],
+        ['aguante','Aguante'],
+        ['mágica','Mágica'],
+      ]);
+      subTool.hidden = false;
+    } else if (type === 'hechizo') {
+      subLabel.textContent = 'Naturaleza (hechizo)';
+      setOptions(subSel, [
+        ['all','Todas'],
+        ['daño','Daño'],
+        ['combo','Combo'],
+        ['especial','Especial'],
+      ]);
+      subTool.hidden = false;
+    } else {
+      subTool.hidden = true;
+      setOptions(subSel, [['all','Todas']]);
+    }
+    subSel.value = 'all';
+  }
+
+  // ✅ única función apply: filtra por tipo + subfiltro + búsqueda y ordena
+  function apply() {
+  const sort   = sortSel.value;
+  const filter = filterSel.value;
+  const sub    = subTool.hidden ? 'all' : (subSel.value || 'all');
+  const q      = normalize(searchInp?.value?.trim() || "");
+
+  // 1) Filtrar por tipo + subfiltro + búsqueda
+  cards.forEach(card => {
+    const t    = card.dataset.type;           // "criatura" | "hechizo" | "estructura"
+    const nt   = card.dataset.nature || "";   // "básica" | "mágica" | ...
+    const name = card.dataset.name  || "";
+
+    const typeOk   = (filter === 'all' || t === filter);
+    const needsSub = (t === 'criatura' && filter === 'criatura') || (t === 'hechizo' && filter === 'hechizo');
+    const subOk    = !needsSub || sub === 'all' || nt === sub;
+    const nameOk   = q === "" || normalize(name).includes(q);
+
+    card.style.display = (typeOk && subOk && nameOk) ? '' : 'none';
+  });
+
+  // 2) Ordenar solo los visibles
+  const visibles = cards.filter(el => el.style.display !== 'none');
+
+  visibles.sort((a, b) => {
+    // Prepara datos numéricos
+    const ax = Number(a.dataset.xeno)   || 0;
+    const bx = Number(b.dataset.xeno)   || 0;
+    const aa = Number(a.dataset.ataque) || 0;
+    const ba = Number(b.dataset.ataque) || 0;
+    const ah = Number(a.dataset.salud)  || 0;
+    const bh = Number(b.dataset.salud)  || 0;
+
+    // 2.1) Orden específico elegido
+    if (sort === 'alpha') {
+      return collator.compare(a.dataset.name, b.dataset.name);
+    }
+    if (sort === 'dmg-desc') {
+      // Daño ↓, luego Xeno ↓ como desempate, y alfabético
+      return (ba - aa) || (bx - ax) || collator.compare(a.dataset.name, b.dataset.name);
+    }
+    if (sort === 'hp-desc') {
+      // Salud ↓, luego Xeno ↓ como desempate, y alfabético
+      return (bh - ah) || (bx - ax) || collator.compare(a.dataset.name, b.dataset.name);
+    }
+
+    // 2.2) Orden por Xeno (asc/desc) por defecto
+    return sort === 'xeno-desc'
+      ? (bx - ax) || collator.compare(a.dataset.name, b.dataset.name)
+      : (ax - bx) || collator.compare(a.dataset.name, b.dataset.name);
+  });
+
+  grid.append(...visibles);
+}
+
+
+  // Debounce para la búsqueda
+ sortSel.addEventListener('change', () => { saveBrowserState(); apply(); });
+
+filterSel.addEventListener('change', () => {
+  saveBrowserState();
+  refreshSubfilter();
+  refreshSortOptions();
+  apply();
+});
+
+subSel.addEventListener('change', () => { saveBrowserState(); apply(); });
+
+// La búsqueda ya estaba “debounced”; guardamos también el valor
+let t;
+const debouncedApply = () => { clearTimeout(t); t = setTimeout(() => { apply(); saveBrowserState(); }, 120); };
+searchInp?.addEventListener('input', debouncedApply);
+
+
+  // Estado inicial
+  // Estado inicial (si hay estado guardado, úsalo)
+const hadState = loadBrowserState();
+if (!hadState) {
+  refreshSubfilter();
+  refreshSortOptions();
+}
+apply();
+
+})();
+</script>
+
+
+</section>
+
+<style>
+  .toolbar{
+    display: flex;
+    gap: clamp(8px, 1.5vw, 16px);
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 8px 0 16px;
+  }
+  .tool{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+  }
+.tool[hidden] { display: none !important; }
+
+
+  /* Selects oscuros */
+  .tool select {
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.15);
+    background: rgba(20,20,20,1);
+    color: #fff;
+    appearance: none;
+  }
+  .tool select option {
+    background: rgba(20,20,20,1);
+    color: #fff;
+  }
+
+  .grid-cards{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: clamp(6px, .8vw, 14px);
+    align-items: start;
+  }
+
+  .card-link{ display:block; text-decoration:none; }
+
+  .card-4x3{
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #111;
+    margin: 0;
+  }
+  .card-4x3 > img{
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .name{
+    margin: 6px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tool-search { margin-left: auto; } /* empuja el buscador a la derecha */
+
+.tool input[type="search"]{
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.15);
+  background: rgba(20,20,20,1);
+  color: #fff;
+  min-width: 220px;
+}
+
+@media (max-width: 640px){
+  .tool-search { margin-left: 0; flex: 1; }
+  .tool input[type="search"]{ min-width: 0; width: 100%; }
+}
+  /* Badges superpuestos (mismo look que los slots del constructor) */
+  .card-4x3 .meta{
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-weight: 700;
+  }
+  .card-4x3 .name-badge{
+    background: rgba(0,0,0,.65);
+    color: #fff;
+    font-weight: 600;
+    font-size: .95rem;
+    padding: 4px 8px;
+    border-radius: 8px;
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-4x3 .chip{
+    background: #2a2f3a;
+    color: #eaeaea;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: .95rem;
+  }
+</style>
+
+
+
+
+
+
+

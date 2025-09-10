@@ -1,0 +1,139 @@
+---
+import "../../styles/globals.css";
+import cards from "../../data/cards.json";
+
+/** Genera las rutas estáticas: /cartas/diablo/, /cartas/guerrero-maya/, ...  */
+export async function getStaticPaths() {
+  return cards.map((card) => ({
+    params: { slug: card.id }, // <- id coincide con los href de la cuadricula
+    props: { card },
+  }));
+}
+
+const { card } = Astro.props;
+const imgSrc = card.ilustracion ?? card.ilustracion_carta; // usa _dibujo si está
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{card.nombre} — Mitocards</title>
+  </head>
+  <body class="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
+    <main class="container mx-auto px-4 py-8 max-w-5xl">
+      <nav class="back-nav">
+        <!-- Fallback: por defecto va a cartas -->
+        <a id="backLink" href="/cartas" class="back-btn">Volver a cartas</a>
+
+      </nav>
+
+      <h1 class="mt-3 mb-4 text-5xl md:text-7xl font-extrabold uppercase tracking-tight">
+        {card.nombre}
+      </h1>
+
+      <!-- GRID: móvil 1 col (imagen arriba, stats debajo) / md+ dos columnas -->
+      <div class="detail-grid">
+        <!-- Imagen (usar _dibujo) -->
+        <figure class="image-wrap">
+          <img src={imgSrc} alt={`Ilustración de ${card.nombre}`} loading="eager" />
+        </figure>
+
+        <!-- Panel de stats -->
+        <aside class="stats">
+          <ul>
+            <li><span>Xeno:</span> {card.xeno}</li>
+            <li><span>Huecos:</span> {card.huecos ?? 0}</li>
+            <li><span>Salud:</span> {card.salud ?? 0}</li>
+            <li><span>Daño:</span> {card.ataque ?? 0}</li>
+          </ul>
+
+          {card.habilidad && (
+            <div class="habilidad">
+              <div class="label">Habilidad:</div>
+              <div class="text">“{card.habilidad}”</div>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {card.descripcion && (
+        <>
+          <h2 class="subtitle">Descripción</h2>
+          <p class="desc">{card.descripcion}</p>
+        </>
+      )}
+    </main>
+
+    <script>
+      // Al cargar en el navegador, miramos el querystring ?from=constructor
+      (function () {
+        const link = document.getElementById('backLink') as HTMLAnchorElement | null;
+        if (!link) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const from = params.get('from');
+
+         if (from === 'constructor') {
+   link.href = '/constructor';
+   link.innerHTML = 'Volver al constructor';
+ } else if (from === 'repositorio') {
+   link.href = '/repositorio';
+   link.innerHTML = 'Volver al repositorio';
+ } else if (document.referrer && /\/constructor(?:\/|\?|$)/.test(document.referrer)) {
+   link.href = '/constructor';
+   link.innerHTML = 'Volver al constructor';
+ } else if (document.referrer && /\/repositorio(?:\/|\?|$)/.test(document.referrer)) {
+   link.href = '/repositorio';
+   link.innerHTML = 'Volver al repositorio';
+ }
+      })();
+    </script>
+  </body>
+</html>
+
+<style>
+  .detail-grid{
+    display:grid;
+    grid-template-columns: 1fr;       
+    gap: clamp(10px, 2vw, 24px);
+    align-items:start;
+  }
+  @media (min-width: 768px){
+    .detail-grid{ grid-template-columns: 1.2fr 0.8fr; }
+  }
+
+  .image-wrap{
+    border-radius: 12px;
+    overflow: hidden;
+    background: #111;
+    aspect-ratio: 4 / 3;
+  }
+  .image-wrap img{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .stats{
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: clamp(12px, 2vw, 18px);
+  }
+  .stats ul{
+    list-style:none; margin:0; padding:0;
+    display:grid; gap:8px;
+    font-size: clamp(14px, 1.6vw, 18px);
+  }
+  .stats li span{ opacity:.9; }
+
+  .habilidad{ margin-top: clamp(14px, 2vw, 20px); line-height:1.5; }
+  .habilidad .label{ opacity:.9; margin-bottom:4px; }
+  .habilidad .text{ white-space: pre-wrap; }
+
+  .subtitle{ font-size: clamp(22px, 3.4vw, 36px); margin: clamp(16px, 3vw, 28px) 0 8px; }
+  .desc{ font-size: clamp(14px, 1.6vw, 18px); line-height: 1.7; opacity:.95; }
+</style>
+
