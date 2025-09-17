@@ -11,7 +11,12 @@ export async function getStaticPaths() {
 }
 
 const { card } = Astro.props;
-const imgSrc = card.ilustracion ?? card.ilustracion_carta; // usa _dibujo si está
+const imgSrc =
+  card.ilustracion_h
+  ?? card.ilustracion_carta_h
+  ?? card.ilustracion_m
+  ?? card.ilustracion_l
+  ?? "/img/placeholder-card.png";
 ---
 
 <html lang="es">

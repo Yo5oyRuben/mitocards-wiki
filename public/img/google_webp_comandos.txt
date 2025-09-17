@@ -1,0 +1,11 @@
+for %i in ("C:\Users\rbndz\mitocards-wiki\public\img\cartas\*.png") do cwebp "%i" -q 80 -o "C:\Users\rbndz\mitocards-wiki\public\img\cartas\webp\%~ni.webp"
+
+
+
+for %i in ("C:\Users\rbndz\mitocards-wiki\public\img\cartas\png\*.png") do cwebp "%i" -q 65 -resize 400 0 -metadata icc -o "C:\Users\rbndz\mitocards-wiki\public\img\cartas\webp_l\%~ni.webp"
+
+
+for %i in ("C:\Users\rbndz\mitocards-wiki\public\img\cartas\png\*.png") do cwebp "%i" -q 75 -resize 1000 0 -metadata icc -o "C:\Users\rbndz\mitocards-wiki\public\img\cartas\webp_m\%~ni.webp"
+
+
+Ubicacion exe: C:\Users\rbndz\cwebp\libwebp-1.6.0-windows-x64\bin>

@@ -158,7 +158,9 @@ import "../styles/globals.css";
 
       <button id="btnImport" class="btn">Importar</button>
       <button id="btnClear" class="btn">Vaciar</button>
-      <button id="btnExport" class="btn" disabled>Guardar</button>
+      <button id="btnExport" class="btn" disabled>Guardar local</button>
+      <button id="btnSaveCloud" class="btn">Guardar en la nube</button>
+
     </div>
 
     <div class="main-wrap">
@@ -211,8 +213,15 @@ import "../styles/globals.css";
         <div id="presults" class="grid" role="list"></div>
       </div>
     </div>
+<!-- justo antes del <script type="module"> de constructor.astro -->
+<script src="/js/auth-ui.js?v=20250913" defer></script>
 
     <script type="module">
+
+// en constructor.astro
+
+
+
       // ================= Helpers =================
       const normId = (v) => String(v ?? "").trim().toLowerCase();
       const abs = (p) => (typeof p === "string" && p && !p.startsWith("/")) ? "/" + p.replace(/^(\.\/)?/, "") : p;
@@ -223,8 +232,13 @@ import "../styles/globals.css";
         ...c,
         id: normId(c.id ?? c.slug ?? c.nombre ?? c.name),
         nombre: c.nombre ?? c.name ?? c.titulo ?? c.title ?? "",
-        ilustracion: abs(c.ilustracion ?? c.ilustracion_carta ?? c.imagen ?? c.image ?? c.picture ?? ""),
-        ilustracion_carta: abs(c.ilustracion_carta ?? c.ilustracion ?? c.imagen ?? c.image ?? c.picture ?? ""),
+        ilustracion: abs(
+  c.ilustracion_m
+  ?? c.ilustracion_carta_m
+  ?? c.ilustracion_h
+  ?? c.ilustracion_l
+  ?? c.imagen ?? c.image ?? ""
+),
         xeno: Number(c.xeno ?? c.coste ?? c.costo ?? c.costo_xeno ?? c.cost ?? 0) || 0,
         huecos: Number(c.huecos ?? c.espacios ?? c.slots ?? 0),
         // Campos para filtros/orden
@@ -290,6 +304,45 @@ const loadDraft = () => {
       // ================= Estado & refs =================
       let catalog = [];
       let ids = []; // lista de ids (string)
+
+      // --- Modo edición ---
+const urlParams = new URLSearchParams(location.search);
+let editingId = (urlParams.get('edit') || '').trim() || null;
+let editingVisibility = 'private';
+
+async function hydrateEdit() {
+  if (!editingId) return false;
+  try { await (window.AuthLite?.require?.() ?? Promise.resolve(null)); } catch {}
+  try {
+      const r = await fetch('/api/decks/' + encodeURIComponent(editingId) + '?ts=' + Date.now(), {
+      credentials:'include', cache:'no-store'
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const d = data?.deck ?? data; // admite {deck} o plano
+    // Volcar datos en la UI
+    document.getElementById("deckName").value = String(d.nombre ?? "");
+
+    elXenoMax.value = String(Number(d.xenoMax) || 0);
+    elHueMax.value  = String(Number(d.huecosMax) || 0);
+    elDesc.value    = String(d.descripcion ?? "");
+    ids = Array.isArray(d.ids) ? d.ids.map(normId) : [];
+    editingVisibility = String(d.visibility||'private').toLowerCase()==='public' ? 'public' : 'private';
+constructor
+
+
+    // Pintar
+    renderSlots(); recompute();
+    // Señal visual opcional
+    const btn = document.getElementById('btnSaveCloud');
+    if (btn) btn.textContent = 'Guardar cambios';
+    return true;
+  } catch (e) {
+    console.warn('No se pudo cargar el mazo a editar:', e);
+    return false;
+  }
+}
+
 
       // Top UI
       const elXenoMax  = document.getElementById("xenoMax");
@@ -631,6 +684,51 @@ elDesc.addEventListener("input", saveDraft);
         renderSlots(); recompute();
       };
       const removeIndex = (i) => { ids = ids.filter((_, idx) => idx !== i); renderSlots(); recompute(); };
+const btnSaveCloud = document.getElementById('btnSaveCloud');
+btnSaveCloud.addEventListener('click', async () => {
+  if (!window.AuthLite) {
+    alert('Autenticación no cargada. Incluye /js/auth-ui.js en esta página.');
+    return;
+  }
+  const me = await window.AuthLite.require();
+  if (!me) return;
+
+  // Construye SIEMPRE desde el DOM/estado ya inicializado
+  const payload = {
+    nombre: document.getElementById("deckName").value || "",
+    xenoMax: Number(elXenoMax?.value ?? 0) || 0,
+    huecosMax: Number(elHueMax?.value ?? 0) || 0,
+    ids: Array.isArray(ids) ? ids.map(s => String(s).toLowerCase()) : [],
+    descripcion: elDesc?.value || ""
+  };
+
+  console.log("[Guardar nube] payload →", payload);
+
+  try {
+   if (editingId) {
+      const r = await fetch('/api/decks/' + encodeURIComponent(editingId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ...payload, visibility: editingVisibility })
+      });
+      if (!r.ok) throw new Error('PUT /api/decks/:id → ' + r.status);
+      await r.json().catch(()=> ({}));
+      alert(`Mazo actualizado ✓\nVisibilidad: ${editingVisibility}\nID: ${editingId}`);
+    } else {
+      // --- Modo nuevo: flujo actual ---
+      const publico = confirm('¿Hacer este mazo PÚBLICO? (Aceptar = público, Cancelar = privado)');
+      const visibility = publico ? 'public' : 'private';
+      const resp = await window.AuthLite.saveDeck(payload, visibility);
+
+      if (resp?.error) throw new Error(resp.error);
+      alert(`Mazo guardado en tu cuenta ✓\nVisibilidad: ${visibility}\nID: ${resp.deck?.id || '(sin id)'}`);
+    }
+  } catch (e) {
+        alert('No se pudo guardar: ' + (e?.message || e));
+  }
+});
+
 
       // ================= Import/Export/Vaciar =================
       btnExport.addEventListener("click", () => {
@@ -708,7 +806,8 @@ elDesc.addEventListener("input", saveDraft);
       (async () => {
         catalog = await loadCatalog();
         if (!catalog.length) showWarn("No se pudo cargar el catálogo (0 cartas). Coloca una copia en /public/cards.json o /public/data/cards.json.");
-        loadDraft();
+          const isEditing = await hydrateEdit();
+  if (!isEditing && !editingId) loadDraft(); // si venías con ?edit=, no pises con draft
         renderSlots(); recompute();
         console.log("[catalog]", catalog.length);
       })();

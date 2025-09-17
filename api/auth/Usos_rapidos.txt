@@ -1,0 +1,26 @@
+Borrar mi cuenta:
+
+fetch('/api/auth/delete', {
+  method:'POST', credentials:'include',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ confirm:true, password:'' /* si tu usuario tiene password */ })
+}).then(r=>r.json()).then(console.log)
+
+
+
+Cambiar alias:
+
+fetch('/api/auth/change-handle', {
+  method:'POST', credentials:'include',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ newHandle:'nuevoalias', password:'' /* si tenías */ })
+}).then(r=>r.json()).then(console.log)
+
+
+Cambiar/Poner contraseña:
+
+fetch('/api/auth/change-password', {
+  method:'POST', credentials:'include',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ oldPassword:'si_tenías', newPassword:'nueva' })
+}).then(r=>r.json()).then(console.log)

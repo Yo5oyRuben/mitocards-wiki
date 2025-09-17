@@ -30,6 +30,17 @@ const { title = "Mitocards", showBack = false } = Astro.props;
       <slot />
     </main>
     <Analytics />
+    <script src="/js/auth-ui.js" defer></script>
+
+
+    <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(console.error);
+    });
+  }
+</script>
+
   </body>
 </html>
 

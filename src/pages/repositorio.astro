@@ -1,51 +1,6 @@
 ---
-/**
- * Repositorio de Mazos
- * - Lee todos los JSON de /src/data/mazos/*.json (build-time)
- * - Cruza ids con /src/data/cards.json para calcular xenoTotal y mostrar miniaturas
- * - Lista vertical: encabezado arriba; abajo, miniaturas (izq.) + descripción (dcha.)
- */
 import "../styles/globals.css";
-import cards from "../data/cards.json";
-
-// 1) Cargar todos los mazos del repositorio
-const modules = import.meta.glob("../data/mazos/*.json", { eager: true, import: "default" }) as Record<string, any>;
-
-// 2) Índices rápidos de cartas por id normalizado
-const norm = (v: any) => String(v ?? "").trim().toLowerCase();
-const abs = (p: any) => (typeof p === "string" && p && !p.startsWith("/")) ? "/" + p.replace(/^(\.\/)?/, "") : p;
-const byId = new Map(cards.map((c: any) => [norm(c.id ?? c.slug ?? c.nombre ?? c.name), c]));
-
-// 3) Normalizar y validar cada mazo
-type Deck = {
-  file: string;
-  nombre: string;
-  xenoMax: number;
-  huecosMax: number;
-  ids: string[];
-  descripcion: string;
-  xenoTotal: number;
-  cards: any[];
-};
-
-const decks: Deck[] = Object.entries(modules)
-  .map(([file, raw]) => {
-    const nombre     = String(raw?.nombre ?? file.split("/").pop()?.replace(/\.json$/,"") ?? "Mazo");
-    const xenoMax    = Number(raw?.xenoMax ?? 0);
-    const huecosMax  = Number(raw?.huecosMax ?? 0);
-    const ids        = Array.isArray(raw?.ids) ? raw.ids.map(norm) : [];
-    const descripcion= String(raw?.descripcion ?? raw?.description ?? "");
-    const cardsInDeck= ids.map((id: string) => byId.get(id)).filter(Boolean);
-    const xenoTotal  = cardsInDeck.reduce((a: number, c: any) => a + Number(c?.xeno ?? 0), 0);
-
-    return { file, nombre, xenoMax, huecosMax, ids, descripcion, xenoTotal, cards: cardsInDeck } as Deck;
-  })
-  // Un mazo "válido" aquí = tiene ids y límites numéricos. La validez estricta ya la aplica el constructor. :contentReference[oaicite:1]{index=1}
-  .filter(d => d.ids.length > 0 && Number.isFinite(d.xenoMax) && Number.isFinite(d.huecosMax))
-  // Orden opcional: por fecha de nombre de archivo o alfabético de nombre
-  .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-
-const TITLE = "Repositorio de Mazos";
+const TITLE = "Explorador de mazos";
 ---
 
 <html lang="es">
@@ -54,89 +9,630 @@ const TITLE = "Repositorio de Mazos";
     <title>{TITLE}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style is:global>
-      :root {
-        --bg:#0e0f12; --fg:#eaeaea; --muted:#a0a0a0;
-        --card-bg:#161922; --tile:#1a1d27; --ring:#3a4b67;
+      :root{
+        --bg:#0e0f12; --fg:#eaeaea; --muted:#a0a0a0; --accent:#8ec7ff; --err:#f77;
+        --card-bg:#161922; --tile:#1a1d27; --chip:#2a2f3a; --ok:#7de37d; --ring:#3a4b67;
       }
       body{background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Ubuntu,sans-serif}
-      h1{font-weight:800;letter-spacing:.3px;margin:24px 16px 8px}
-      .container{padding:0 16px 24px;max-width:1200px;margin:0 auto}
+      h1{font-weight:800;letter-spacing:.3px;margin:24px 16px 6px}
+      .sub{margin:0 16px 18px;color:var(--muted)}
 
-      /* Fila de mazo */
-      .deck{border:1px solid #2a2a33;background:var(--card-bg);border-radius:16px;padding:14px;margin:14px 0}
-      .deck h2{margin:0 0 10px;font-size:1.2rem;letter-spacing:.5px}
-      .deck h2 .title{font-weight:900; text-transform:uppercase}
-      .deck h2 .meta{font-weight:700;opacity:.9;margin-left:10px}
+      /* Tabs */
+      .tabs{display:flex;gap:8px;align-items:center;margin:0 16px 12px}
+      .tab-btn{
+        background:#1c202a;border:1px solid #2a2a33;border-radius:12px;color:var(--fg);
+        padding:10px 14px;font-weight:700;cursor:pointer
+      }
+      .tab-btn[aria-selected="true"]{outline:2px solid #42506a;background:#222834}
+      .spacer{flex:1}
 
-      .deck-row{display:grid;grid-template-columns:1.2fr 0.8fr;gap:14px;align-items:start}
-      @media (max-width: 900px){ .deck-row{grid-template-columns:1fr} }
+      /* Filter bar */
+      .filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 16px 16px}
+      .filters input[type="text"], .filters input[type="number"]{
+        background:var(--tile);color:var(--fg);border:1px solid #2a2a33;border-radius:10px;padding:10px 12px
+      }
+      .btn{background:#2a2f3a;color:var(--fg);border:1px solid #3a3f4a;padding:10px 12px;border-radius:10px;cursor:pointer}
+      .btn:hover{outline:1px solid #44516a}
+      .chip{background:var(--chip);color:var(--fg);padding:6px 10px;border-radius:999px;font-weight:700}
+      .chip.rem{cursor:pointer;border:1px solid rgba(255,255,255,.14)}
 
-      /* Miniaturas (imitando los slots del constructor pero más compacto) */
-      .thumbs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-      @media (max-width:1200px){ .thumbs{grid-template-columns:repeat(3,minmax(0,1fr))} }
-      @media (max-width:640px){ .thumbs{grid-template-columns:repeat(2,minmax(0,1fr))} }
+      /* Panels */
+      .panel{margin:0 16px 22px;background:var(--card-bg);border:1px solid #2a2a33;border-radius:16px;padding:12px}
+      .hidden{display:none !important}
 
-      .thumb{position:relative;background:var(--tile);border:1px solid #2a2a33;border-radius:12px;overflow:hidden}
-      .thumb img{width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;display:block}
-      .thumb .meta{position:absolute;left:8px;right:8px;bottom:8px;display:flex;justify-content:space-between;align-items:flex-end;font-weight:700}
-      .thumb .name-badge{background:rgba(0,0,0,.65);color:#fff;font-weight:600;font-size:.9rem;padding:3px 6px;border-radius:8px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .thumb .chip{background:#2a2f3a;color:#eaeaea;padding:3px 6px;border-radius:999px;font-weight:700;font-size:.9rem}
+      /* Grid decks */
+      .grid{display:grid;grid-template-columns:1fr;gap:16px}
+      .deck{
+        background:var(--tile);border:1px solid #2a2a33;border-radius:14px;padding:10px;display:flex;gap:12px;align-items:center 
+      }
+      .thumbs{
+   display:grid;
+   grid-template-columns: repeat(4, 1fr);
+   grid-template-rows: repeat(2, 1fr);
+   gap: 8px;
+   /* Tamaño compacto pero generoso: ajusta estos clamps a tu gusto */
+   width:  clamp(320px, 36vw, 520px);
+   height: clamp(180px, 24vh, 260px);
+   flex: 0 0 auto;
+ }
+ /* Cada celda de miniatura es un bloque con borde/redondeado */
+ .thumbs a.thumb{
+   display:block;
+   width:100%;
+   height:100%;
+   border-radius:12px;
+   overflow:hidden;
+   border:1px solid #2a2a33;
+ }
+ .thumbs a.thumb img{
+   width:100%;
+   height:100%;
+   object-fit:cover;
+   display:block;
+ }
+      .meta{flex:1;min-width:0}
+      .meta h3{margin:0 0 6px;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .meta .line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .meta .desc{
+  color:var(--muted);
+  margin-top:6px;
+  /* Antes estaba clamped a 2 líneas; ahora dejamos fluir y cortar palabras largas */
+  display:block;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+      .bad{background:#3a2326;color:#ffb3b9;border:1px solid #744}
+      .ok{background:#233a2a;color:#b7ffb3;border:1px solid #274}
 
-      /* Descripción */
-      .desc{border:1px solid #2a2a33;background:rgba(255,255,255,0.04);border-radius:12px;padding:12px;line-height:1.55;min-height:120px;white-space:pre-wrap}
-      .desc.empty{opacity:.6; font-style:italic}
-      nav.back{margin:0 16px 8px}
-      .back a{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #3a3f4a;background:#2a2f3a;color:var(--fg);text-decoration:none}
+      /* Picker (reutilizado del constructor, simplificado para seleccionar filtros) */
+      .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:1000}
+      .overlay.open{display:flex}
+      .picker{width:min(1200px,92vw);height:min(85vh,92vh);background:var(--card-bg);border:1px solid #2a2a33;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;padding:14px}
+      .picker .bar{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+      .picker .bar .grow{flex:1}
+      .picker .bar input{width:100%;font-size:1.05rem;padding:12px;border-radius:12px;border:1px solid #2a2a33;background:var(--tile);color:var(--fg)}
+      .picker .grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;flex:1;overflow:auto;padding-right:4px;align-items:start;grid-auto-rows:max-content}
+      @media (max-width:1200px){.picker .grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media (max-width:820px){.picker .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      .tile{display:flex;flex-direction:column;background:#0f1118;border:1px solid #2a2a33;border-radius:12px;overflow:hidden}
+      .tile .card-4x3{position:relative;width:100%;aspect-ratio:4/3;overflow:hidden}
+      .tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+      .tile .meta{position:absolute;left:8px;right:8px;bottom:8px;display:flex;justify-content:space-between;align-items:flex-end;font-weight:700}
+      .tile .name-badge{background:rgba(0,0,0,.65);color:#fff;font-weight:600;font-size:.95rem;padding:4px 8px;border-radius:8px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .tile .chip{background:#2a2f3a;color:#eaeaea;padding:4px 8px;border-radius:999px;font-weight:700;font-size:.95rem}
+      .pick-mark{position:absolute;top:8px;left:8px;background:#233a2a;color:#b7ffb3;border:1px solid #274;border-radius:999px;padding:2px 8px;font-weight:800}
+    
+    .owner-wrap{ position: relative; }
+
+.owner-suggest{
+  position: absolute;
+  left: 0;
+  right: 0;               /* igual ancho que el input */
+  top: calc(100% + 4px);  /* justo bajo el input */
+  max-height: 240px;
+  overflow: auto;
+  background: var(--bg, #111);
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  z-index: 50;
+}
+
+.owner-suggest.hidden{ display: none; }
+
+.owner-suggest .item{
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.owner-suggest .item:hover{
+  background: rgba(255,255,255,.06);
+}
+
+    .badge-privado{
+  display:inline-block;
+  margin-left:.5rem;
+  padding:2px 6px;
+  font-size:.75rem;
+  line-height:1rem;
+  border-radius:9999px;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.18);
+  text-transform:uppercase;
+  letter-spacing:.02em;
+}
+    
+
     </style>
   </head>
   <body>
-    <nav class="back">
-      <a href="/" class="back-btn">Volver al menú</a>
-    </nav>
+    <nav class="back-nav" style="margin:12px 16px 0"><a href="/" class="back-btn">Volver al menú</a></nav>
+    <h1>Explorador de mazos</h1>
+    <p class="sub">Busca, filtra y alterna entre <strong>Mazos públicos</strong> y <strong>Mis mazos</strong>.</p>
 
-    <h1>{TITLE}</h1>
-    <div class="container">
-      {decks.length === 0 ? (
-        <p>No se han encontrado mazos en <code>/src/data/mazos/</code>.</p>
-      ) : (
-        decks.map((d) => (
-          <section class="deck">
-            <h2>
-              <span class="title">{d.nombre}</span>
-              <span class="meta">· Xeno {d.xenoTotal}/{d.xenoMax} · Huecos {d.huecosMax}</span>
-            </h2>
-
-            <div class="deck-row">
-              {/* Miniaturas izquierda */}
-              <div class="thumbs">
-                {d.cards.map((c) => {
-                  const nombre = c?.nombre ?? c?.name ?? c?.id ?? "¿?";
-                  const img = abs(c?.ilustracion ?? c?.ilustracion_carta ?? "/img/placeholder-card.png");
-                  const xeno = Number(c?.xeno ?? 0);
-                  const id = norm(c?.id ?? c?.slug ?? c?.nombre ?? c?.name);
-                  return (
-                    <a class="thumb" href={`/cartas/${id}/?from=repositorio`} title={nombre}>
-                      <img src={img} alt={`Carta de ${nombre}`} loading="lazy" decoding="async" fetchpriority="low"
-                           width="480" height="360"
-                           sizes="(max-width:1200px) 33vw, (max-width:820px) 50vw, 25vw"
-                           onerror="this.onerror=null;this.src='/img/placeholder-card.png'"/>
-                      <div class="meta">
-                        <span class="name-badge">{nombre}</span>
-                        <span class="chip">{xeno}</span>
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-
-              {/* Descripción derecha */}
-              <div class={["desc", d.descripcion.trim() ? "" : "empty"].join(" ")}>
-                {d.descripcion.trim() ? d.descripcion : "Sin descripción."}
-              </div>
-            </div>
-          </section>
-        ))
-      )}
+    <div class="tabs" role="tablist" aria-label="Secciones">
+      <button id="tabPublic" class="tab-btn" role="tab" aria-selected="true" aria-controls="panelPublic">Públicos</button>
+      <button id="tabMine"   class="tab-btn" role="tab" aria-selected="false" aria-controls="panelMine">Mis mazos</button>
+      <span class="spacer"></span>
+      <span id="counter" class="chip">–</span>
     </div>
+
+<div class="filters">
+  <input id="q" type="text" placeholder="Buscar por nombre o descripción…" aria-label="Buscar" />
+
+  <!-- NUEVO: filtro por propietario (solo afecta a Públicos) -->
+  <div id="ownerWrap" class="owner-wrap">
+  <input id="fowner" type="text" placeholder="Propietario (@alias)" aria-label="Propietario del mazo (solo públicos)" autocomplete="off" />
+  <div id="ownerSuggest" class="owner-suggest hidden"></div>
+</div>
+
+
+  <input id="fx" type="number" min="0" step="1" placeholder="Xeno máx" aria-label="Xeno máximo" />
+  <input id="fh" type="number" min="0" step="1" placeholder="Huecos máx" aria-label="Huecos máximos" />
+
+  <button id="btnPick" class="btn">Seleccionar cartas…</button>
+  <div id="chips" class="filters" style="margin:0;padding:0"></div>
+  <span class="spacer"></span>
+  <button id="btnClear" class="btn">Limpiar filtros</button>
+</div>
+
+    <section id="panelPublic" class="panel" role="tabpanel" aria-labelledby="tabPublic">
+      <div id="listPublic" class="grid" role="list"></div>
+    </section>
+
+    <section id="panelMine" class="panel hidden" role="tabpanel" aria-labelledby="tabMine">
+      <div id="listMine" class="grid" role="list"></div>
+      <p id="noSession" class="sub" style="display:none">Inicia sesión para ver tus mazos.</p>
+    </section>
+
+    <!-- Reutiliza el selector del constructor (misma UX) -->
+    <div id="overlay" class="overlay" aria-hidden="true">
+      <div id="picker" class="picker" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+        <div class="bar">
+          <div class="grow"><input id="pq" type="text" placeholder="Buscar cartas por nombre o texto…" /></div>
+          <span id="pcount" class="chip">–</span>
+          <button id="pclose" class="btn">Cerrar</button>
+        </div>
+        <div id="presults" class="grid" role="list"></div>
+      </div>
+    </div>
+
+    <script src="/js/auth-ui.js" defer></script>
+    <script type="module">
+      // ===== Helpers comunes =====
+      /** @type {string} */
+const ASSETS_VERSION = '2025-09-17';
+/** @param {string} p @returns {string} */
+const addV = (p) => `${p}${p.includes('?') ? '&' : '?'}v=${ASSETS_VERSION}`;
+
+      const $ = (s, r=document) => r.querySelector(s);
+      const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+      const norm = (v) => String(v ?? "").trim().toLowerCase();
+      const normalizeStr = (s="") => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+      const abs = (p) => (typeof p === "string" && p && !p.startsWith("/")) ? "/" + p.replace(/^(\.\/)?/,"") : p;
+      const collator = new Intl.Collator('es', { sensitivity: 'base' });
+      const normOwner = (s="") => norm(String(s).replace(/^@/, '')); // ya lo usabas para filtrar
+
+function buildOwnerHtml(list){
+  return list.map(h => `<div class="item" data-h="${h}">@${h}</div>`).join('');
+}
+
+function updateOwnerSuggest() {
+  const q = normOwner(elFOwner.value);
+  if (!q) { elSuggest.innerHTML = ''; elSuggest.classList.add('hidden'); return; }
+
+  // Sugerencias por “contiene” (puedes cambiar a startsWith si prefieres)
+const matches = ownersList.filter(h => norm(h).startsWith(q)).slice(0, 50);
+  if (!matches.length) { elSuggest.innerHTML = ''; elSuggest.classList.add('hidden'); return; }
+
+  elSuggest.innerHTML = buildOwnerHtml(matches);
+  elSuggest.classList.remove('hidden');
+}
+
+
+
+      // ===== Carga catálogo para imágenes + selector (mismo patrón que constructor) =====
+      const normalizeCard = (c) => ({
+        ...c,
+        id: norm(c.id ?? c.slug ?? c.nombre ?? c.name),
+        nombre: c.nombre ?? c.name ?? "",
+        ilustracion: addV(abs(
+  c.ilustracion_l
+  ?? c.ilustracion_carta_l
+  ?? c.ilustracion_m
+  ?? c.ilustracion_h
+  ?? c.imagen ?? c.image ?? "/img/placeholder-card.png"
+)),
+        xeno: Number(c.xeno ?? 0) || 0,
+        tipo: String(c.tipo ?? "").toLowerCase(),
+        naturaleza: String(c.naturaleza ?? "").toLowerCase(),
+        ataque: (c.ataque === "∞" || c.ataque === "infinito") ? 9999 : Number(c.ataque ?? 0),
+        salud:  (c.salud  === "∞" || c.salud  === "infinito") ? 9999 : Number(c.salud  ?? 0),
+      });
+
+      async function loadCatalog() {
+        const base = (import.meta.env?.BASE_URL ?? "/").replace(/\/+$/,"");
+        const candidates = [`${base}/cards.json`, `${base}/data/cards.json`, "/cards.json", "/data/cards.json"];
+        for (const url of candidates) {
+          try {
+            const res = await fetch(url, { cache: "no-store" });
+            if (res.ok) {
+              const json = await res.json();
+              if (Array.isArray(json) && json.length) return json.map(normalizeCard);
+            }
+          } catch {}
+        }
+        return [];
+      }
+
+      // ===== Estado =====
+      let catalog = [];
+      let idxCards = new Map();       // id -> card
+      let me = null;
+
+      // datasets
+      let decksPublic = [];           // documentos completos
+      let decksMine   = [];           // idem (si sesión)
+
+      // filtros
+      const state = {
+        tab: 'public',                // 'public' | 'mine'
+        q: '',                        // búsqueda nombre+desc
+        fx: '',                       // xenoMax exacto (string para detectar vacío)
+        fh: '',     
+        owner: '',                  // huecosMax exacto
+        cards: new Set()              // ids de cartas que deben estar TODAS presentes
+      };
+      
+
+      // refs UI
+      const elTabPub = $('#tabPublic'), elTabMine = $('#tabMine');
+      const panelPub = $('#panelPublic'), panelMine = $('#panelMine');
+      const listPub = $('#listPublic'), listMine = $('#listMine');
+
+      listMine.addEventListener('click', async (ev) => {
+    // EDITAR
+  const btnEdit = ev.target?.closest?.('button[data-edit]');
+  if (btnEdit) {
+    const id = btnEdit.getAttribute('data-edit');
+    if (id) location.href = '/constructor?edit=' + encodeURIComponent(String(id));
+    return;
+  }
+
+  // ELIMINAR
+  const btn = ev.target?.closest?.('button[data-del]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-del');
+  if (!id) return;
+  if (!confirm('¿Borrar este mazo?')) return;
+  try {
+    const r = await fetch('/api/decks/' + encodeURIComponent(String(id)), {
+      method:'DELETE', credentials:'include'
+    });
+    if (!r.ok) throw new Error('DELETE failed');
+    // quita la tarjeta del DOM
+    const card = btn.closest('.deck');
+    if (card && card.remove) card.remove();
+  } catch (e) {
+    console.error(e);
+    alert('No se pudo borrar el mazo.');
+  }
+});
+
+
+      const elCounter = $('#counter');
+      const elNoSession = $('#noSession');
+
+      const elQ  = $('#q'), elFx = $('#fx'), elFh = $('#fh');
+const elFOwner = $('#fowner'), elOwners = $('#owners');   // NUEVO
+const elPick = $('#btnPick'), elClear = $('#btnClear'), elChips = $('#chips');
+      const elOwnerWrap = $('#ownerWrap');
+      const elSuggest   = $('#ownerSuggest');
+      let ownersList = []; 
+      // Picker refs
+      const overlay = $('#overlay'), presults = $('#presults'), pclose = $('#pclose'), pq = $('#pq'), pcount = $('#pcount');
+
+      // ===== Networking =====
+      async function fetchJSON(url, opt) {
+        const r = await fetch(url, { credentials:'include', ...(opt||{}) });
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      }
+
+      async function loadDatasets() {
+        // sesión (badge ya la gestiona auth-ui; aquí sólo necesitamos saber si hay user)
+        try { const resp = await fetchJSON('/api/auth/me?ts=' + Date.now(), { cache:'no-store' }); me = resp.user; } catch{}
+
+        // públicos siempre
+        try {
+          const obj = await fetchJSON('/api/decks?scope=public&expand=1');
+          decksPublic = Array.isArray(obj?.decks) ? obj.decks : [];
+        } catch(e) { decksPublic = []; console.warn(e); }
+
+        // mis mazos si hay sesión
+        if (me) {
+          try {
+            const obj = await fetchJSON('/api/decks?expand=1');
+            decksMine = Array.isArray(obj?.decks) ? obj.decks : [];
+            elNoSession.style.display = 'none';
+          } catch(e) {
+            decksMine = [];
+            elNoSession.style.display = '';
+          }
+        } else {
+          decksMine = [];
+          elNoSession.style.display = '';
+        }
+      }
+      function updateOwners() {
+  const set = new Set();
+  for (const d of decksPublic) {
+    if (d?.ownerHandle) set.add(String(d.ownerHandle).trim());
+  }
+  ownersList = [...set].sort((a,b)=>collator.compare(a,b));
+}
+await loadDatasets();
+updateOwners();
+
+      // ===== Render chips de cartas seleccionadas =====
+      function paintChips() {
+        elChips.innerHTML = '';
+        if (!state.cards.size) return;
+        for (const id of state.cards) {
+          const c = idxCards.get(id);
+          const chip = document.createElement('span');
+          chip.className = 'chip rem';
+          chip.textContent = c ? c.nombre : id;
+          chip.title = 'Quitar';
+          chip.onclick = () => { state.cards.delete(id); paintChips(); apply(); };
+          elChips.appendChild(chip);
+        }
+      }
+
+      // ===== Filtrado =====
+      function containsAll(deckIds, requiredSet) {
+        if (!requiredSet.size) return true;
+        const set = new Set((deckIds || []).map(norm));
+        for (const id of requiredSet) { if (!set.has(id)) return false; }
+        return true;
+      }
+
+      function passExact(n, eq) {
+        if (eq === '' || eq === null || eq === undefined) return true;
+        const num = Number(eq);
+        if (!Number.isFinite(num)) return true;
+        return Number(n) === num;
+      }
+
+      function passQuery(deck, q) {
+        if (!q) return true;
+        const needle = normalizeStr(q);
+        const name = normalizeStr(String(deck?.nombre ?? ''));
+        const desc = normalizeStr(String(deck?.descripcion ?? ''));
+        return name.includes(needle) || desc.includes(needle);
+      }
+
+      function passOwner(deck) {
+  // Solo aplica en pestaña 'public'
+  if (state.tab !== 'public') return true;
+  if (!state.owner) return true;
+  const h = deck?.ownerHandle ? normOwner(deck.ownerHandle) : '';
+  return h === state.owner;
+}
+
+function applyOne(list) {
+  return list.filter(d =>
+    passOwner(d) &&
+    passQuery(d, state.q) &&
+    passExact(d?.xenoMax, state.fx) &&
+    passExact(d?.huecosMax, state.fh) &&
+    containsAll(d?.ids, state.cards)
+  );
+}
+
+
+      function deckThumbsHTML(deck) {
+        // hasta 8 miniaturas (usa catálogo para buscar ruta de imagen)
+        const ids = Array.isArray(deck?.ids) ? deck.ids.slice(0,8) : [];
+        if (!ids.length) return `<div class="thumbs"></div>`;
+        const imgs = ids.map(id => {
+          const c = idxCards.get(norm(id));
+          const src = c?.ilustracion || '/img/placeholder-card.png';
+          const alt = c?.nombre ? `Carta ${c.nombre}` : 'Carta';
+          const cid = encodeURIComponent(norm(id));
+ const title = (c?.nombre || 'Carta').replaceAll('"','&quot;');
+ return `<a class="thumb" href="/cartas/${cid}/?from=repositorio" title="${title}">
+   <img src="${src}" alt="${alt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/img/placeholder-card.png'">
+ </a>`;
+        }).join('');
+        return `<div class="thumbs">${imgs}</div>`;
+      }
+      function xenoUsed(ids){
+  let sum = 0;
+  for (const id of (ids || [])) {
+    sum += Number(idxCards.get(norm(id))?.xeno || 0);
+  }
+  return sum;
+}
+
+      function deckTileHTML(deck, opts={}) {
+        const owner = deck?.ownerHandle ? `· @${deck.ownerHandle}` : '';
+        const desc  = deck?.descripcion ? `<div class="desc">${deck.descripcion}</div>` : '';
+        const usedXeno = Math.min(xenoUsed(deck?.ids), Number(deck?.xenoMax ?? 0));
+
+        return `
+          <article class="deck" role="listitem">
+            ${deckThumbsHTML(deck)}
+            <div class="meta">
+              <h3 title="${deck?.nombre ?? ''}">
+  ${deck?.nombre ?? '(sin nombre)'}
+  <span style="opacity:.6">${owner}</span>
+  ${opts.allowDelete && deck?.visibility === 'private'
+    ? `<span class="badge-privado" title="Este mazo es privado">Privado</span>`
+    : ``}
+</h3>
+              <div class="line">
+                <span class="chip">Xeno ${usedXeno}/${deck?.xenoMax ?? 0}</span>
+                <span class="chip">Huecos máx ${deck?.huecosMax ?? 0}</span>
+                <a class="btn" href="/api/decks/${encodeURIComponent(String(deck?.id ?? ''))}" target="_blank" rel="noopener">Ver JSON</a>
+                ${opts.allowDelete ? `<button class="btn" data-edit="${deck?.id}">Editar</button>` : ''}
+                ${opts.allowDelete ? `<button class="btn danger" data-del="${deck?.id}">Eliminar</button>` : ''}
+                </div>
+              ${desc}
+            </div>
+          </article>
+        `;
+      }
+
+      function paintLists() {
+        const filteredPub  = applyOne(decksPublic);
+        const filteredMine = applyOne(decksMine);
+
+        listPub.innerHTML  = filteredPub.length
+          ? filteredPub.map(d => deckTileHTML(d, { showOwner:true })).join('')
+          : `<p class="sub">No hay mazos que cumplan los filtros.</p>`;
+
+        listMine.innerHTML = (me && filteredMine.length)
+          ? filteredMine.map(d => deckTileHTML(d, { allowDelete:true })).join('')
+          : (!me ? '' : `<p class="sub">No hay mazos que cumplan los filtros.</p>`);
+
+        const total = state.tab === 'public' ? filteredPub.length : (me ? filteredMine.length : 0);
+        elCounter.textContent = (state.tab === 'public' ? 'Públicos: ' : 'Mis mazos: ') + total;
+      }
+
+      function switchTab(tab) {
+        state.tab = tab;
+        if (tab === 'public') {
+          elTabPub.setAttribute('aria-selected','true');
+          elTabMine.setAttribute('aria-selected','false');
+          panelPub.classList.remove('hidden');
+          panelMine.classList.add('hidden');
+        } else {
+          elTabPub.setAttribute('aria-selected','false');
+          elTabMine.setAttribute('aria-selected','true');
+          panelMine.classList.remove('hidden');
+          panelPub.classList.add('hidden');
+        }
+        elOwnerWrap.style.display = (tab === 'public') ? '' : 'none';
+        apply(); // repinta counter acorde a la pestaña
+        elFOwner.disabled = (tab !== 'public');
+      }
+
+      function apply() { paintChips(); paintLists(); }
+
+      // ====== Picker de cartas (reutilizado) ======
+      function openPicker() {
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden','false');
+        document.body.style.overflow='hidden';
+        pq.value = '';
+        renderPicker('');
+        pq.focus();
+      }
+      function closePicker() {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden','true');
+        document.body.style.overflow='';
+      }
+      pclose.addEventListener('click', closePicker);
+      overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closePicker(); });
+
+      function renderPicker(query='') {
+        const q = normalizeStr(query.trim());
+        let list = catalog.filter(c => {
+          const name = c.nombre || '';
+          const text = String(c.texto ?? c.descripcion ?? c.description ?? '');
+          return !q || normalizeStr(name).includes(q) || normalizeStr(text).includes(q);
+        });
+        list.sort((a,b) => collator.compare(a.nombre, b.nombre));
+        presults.innerHTML = '';
+        for (const c of list) {
+          const id = norm(c.id);
+          const a = document.createElement('a');
+          a.className = 'tile';
+          a.href = '#';
+          a.innerHTML = `
+            <div class="card-4x3">
+              <img src="${c.ilustracion || '/img/placeholder-card.png'}" alt="Carta ${c.nombre}" loading="lazy" decoding="async"
+                   onerror="this.onerror=null;this.src='/img/placeholder-card.png'"/>
+              <div class="meta">
+                <span class="name-badge" title="${c.nombre}">${c.nombre}</span>
+                <span class="chip">${c.xeno ?? 0}</span>
+              </div>
+              ${state.cards.has(id) ? '<span class="pick-mark">✓</span>' : ''}
+            </div>
+          `;
+          a.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            if (state.cards.has(id)) state.cards.delete(id); else state.cards.add(id);
+            renderPicker(pq.value); // repinta marca ✓
+            apply();
+          });
+          presults.appendChild(a);
+        }
+        pcount.textContent = `${list.length} cartas`;
+      }
+      pq.addEventListener('input', () => renderPicker(pq.value));
+      // ====== Fin picker ======
+
+      // ===== Wire-up filtros =====
+      let debounce = null;
+      elQ.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(()=>{ state.q = elQ.value; apply(); }, 120); });
+      elFx.addEventListener('input', () => { state.fx = elFx.value; apply(); });
+      elFh.addEventListener('input', () => { state.fh = elFh.value; apply(); });
+      elPick.addEventListener('click', openPicker);
+      elClear.addEventListener('click', () => {
+  elQ.value = ''; elFx.value = ''; elFh.value = ''; elFOwner.value = '';
+  state.q = ''; state.fx = ''; state.fh = ''; state.owner = '';
+  state.cards.clear();
+  apply();
+});
+// Al escribir: actualiza estado + sugerencias
+elFOwner.addEventListener('input', () => {
+  state.owner = normOwner(elFOwner.value);
+  apply();
+  updateOwnerSuggest();
+});
+
+// Clic en una sugerencia
+elSuggest.addEventListener('click', (ev) => {
+  const el = ev.target.closest('.item');
+  if (!el) return;
+  const handle = el.getAttribute('data-h') || '';
+  elFOwner.value = '@' + handle;
+  state.owner = normOwner(handle);
+  apply();
+  elSuggest.classList.add('hidden');
+});
+
+// Ocultar cuando pierde foco (con pequeño delay para permitir click)
+elFOwner.addEventListener('blur', () => setTimeout(() => elSuggest.classList.add('hidden'), 120));
+elFOwner.addEventListener('focus', () => updateOwnerSuggest());
+
+// Ocultar si se hace click fuera
+document.addEventListener('click', (e) => {
+  if (!elOwnerWrap.contains(e.target)) elSuggest.classList.add('hidden');
+});
+
+
+      elTabPub.addEventListener('click', () => switchTab('public'));
+      elTabMine.addEventListener('click', () => switchTab('mine'));
+
+      // ===== Boot =====
+      (async () => {
+        // 1) Cargar catálogo (para thumbs del deck y picker)
+        catalog = await loadCatalog();
+        idxCards = new Map(catalog.map(c => [norm(c.id), c]));
+
+        // 2) Datasets
+        await loadDatasets();
+
+        // 3) Tab por defecto según sesión
+        switchTab(me ? 'mine' : 'public');
+      })();
+    </script>
   </body>
 </html>
