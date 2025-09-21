@@ -38,3 +38,53 @@ async function trim(cache) {
   const keys = await cache.keys();
   if (keys.length > MAX_ITEMS) await cache.delete(keys[0]); // FIFO simple
 }
+
+// ======== API cache (decks) con stale-while-revalidate ========
+const API_CACHE = 'mitocards-api-v1';
+const isDecksAPI = (url, req) =>
+  req.method === 'GET' &&
+  url.origin === self.location.origin &&
+  url.pathname.startsWith('/api/decks');
+
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+
+  // Imágenes (lo que ya tenías)
+  if (isCacheableImage(url, e.request.destination)) {
+    e.respondWith(cacheFirst(e.request));
+    return;
+  }
+
+  // API decks → S-W-R
+  if (isDecksAPI(url, e.request)) {
+    e.respondWith(staleWhileRevalidateAPI(e.request));
+    return;
+  }
+});
+
+async function staleWhileRevalidateAPI(request) {
+  const cache = await caches.open(API_CACHE);
+  const cached = await cache.match(request, { ignoreSearch: false });
+  const networkPromise = fetch(request, { cache: 'no-store', credentials: 'include' })
+    .then(async (resp) => {
+      if (resp && resp.ok) await cache.put(request, resp.clone());
+      return resp;
+    })
+    .catch(() => cached || Response.error());
+
+  return cached || networkPromise;
+}
+
+// === Invalida entradas concretas del caché cuando la app lo pida ===
+self.addEventListener('message', (e) => {
+  const msg = e.data;
+  if (msg && msg.type === 'invalidate' && Array.isArray(msg.urls)) {
+    e.waitUntil((async () => {
+      const cache = await caches.open(API_CACHE);
+      await Promise.all(msg.urls.map(u =>
+        cache.delete(new Request(u), { ignoreSearch: false })
+      ));
+    })());
+  }
+});
+

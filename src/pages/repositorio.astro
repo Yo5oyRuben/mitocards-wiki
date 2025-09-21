@@ -215,7 +215,8 @@ const addV = (p) => `${p}${p.includes('?') ? '&' : '?'}v=${ASSETS_VERSION}`;
       const abs = (p) => (typeof p === "string" && p && !p.startsWith("/")) ? "/" + p.replace(/^(\.\/)?/,"") : p;
       const collator = new Intl.Collator('es', { sensitivity: 'base' });
       const normOwner = (s="") => norm(String(s).replace(/^@/, '')); // ya lo usabas para filtrar
-
+const getDeckOwnerHandle = (deck) =>
+  normOwner(deck?.ownerHandle ?? deck?.owner?.handle ?? deck?.owner ?? '');
 function buildOwnerHtml(list){
   return list.map(h => `<div class="item" data-h="${h}">@${h}</div>`).join('');
 }
@@ -254,24 +255,35 @@ const matches = ownersList.filter(h => norm(h).startsWith(q)).slice(0, 50);
       });
 
       async function loadCatalog() {
-        const base = (import.meta.env?.BASE_URL ?? "/").replace(/\/+$/,"");
-        const candidates = [`${base}/cards.json`, `${base}/data/cards.json`, "/cards.json", "/data/cards.json"];
-        for (const url of candidates) {
-          try {
-            const res = await fetch(url, { cache: "no-store" });
-            if (res.ok) {
-              const json = await res.json();
-              if (Array.isArray(json) && json.length) return json.map(normalizeCard);
-            }
-          } catch {}
-        }
-        return [];
-      }
+  const base = (import.meta.env?.BASE_URL ?? "/").replace(/\/+$/,"");
+  const url = addV(`${base}/cards.json`); // usa ?v=ASSETS_VERSION
+  try {
+    // deja que el navegador/SW cacheen; ya invalidas con ?v=
+    const res = await fetch(url, { cache: "force-cache" });
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json) && json.length) return json.map(normalizeCard);
+    }
+  } catch {}
+  return [];
+}
+async function invalidateDecksCaches(scopes = ['public','mine']) {
+  try {
+    const apiCache = await caches.open('mitocards-api-v1');
+    const targets = [];
+    if (scopes.includes('public')) targets.push('/api/decks?scope=public&expand=1');
+    if (scopes.includes('mine'))   targets.push('/api/decks?expand=1');
+    for (const u of targets) await apiCache.delete(new Request(u), { ignoreSearch: false });
+    navigator.serviceWorker?.controller?.postMessage({ type: 'invalidate', urls: targets });
+    if (scopes.includes('mine')) sessionStorage.removeItem('mitocards:mine:decks');
+  } catch {}
+}
 
       // ===== Estado =====
       let catalog = [];
       let idxCards = new Map();       // id -> card
       let me = null;
+      let loading = { public: true, mine: true };
 
       // datasets
       let decksPublic = [];           // documentos completos
@@ -312,6 +324,10 @@ const matches = ownersList.filter(h => norm(h).startsWith(q)).slice(0, 50);
     const r = await fetch('/api/decks/' + encodeURIComponent(String(id)), {
       method:'DELETE', credentials:'include'
     });
+await invalidateDecksCaches(['public','mine']);
+if (state.tab === 'mine') await loadMineIf(me);
+else await loadPublic();
+
     if (!r.ok) throw new Error('DELETE failed');
     // quita la tarjeta del DOM
     const card = btn.closest('.deck');
@@ -342,40 +358,15 @@ const elPick = $('#btnPick'), elClear = $('#btnClear'), elChips = $('#chips');
         return r.json();
       }
 
-      async function loadDatasets() {
-        // sesión (badge ya la gestiona auth-ui; aquí sólo necesitamos saber si hay user)
-        try { const resp = await fetchJSON('/api/auth/me?ts=' + Date.now(), { cache:'no-store' }); me = resp.user; } catch{}
-
-        // públicos siempre
-        try {
-          const obj = await fetchJSON('/api/decks?scope=public&expand=1');
-          decksPublic = Array.isArray(obj?.decks) ? obj.decks : [];
-        } catch(e) { decksPublic = []; console.warn(e); }
-
-        // mis mazos si hay sesión
-        if (me) {
-          try {
-            const obj = await fetchJSON('/api/decks?expand=1');
-            decksMine = Array.isArray(obj?.decks) ? obj.decks : [];
-            elNoSession.style.display = 'none';
-          } catch(e) {
-            decksMine = [];
-            elNoSession.style.display = '';
-          }
-        } else {
-          decksMine = [];
-          elNoSession.style.display = '';
-        }
-      }
-      function updateOwners() {
+function updateOwners() {
   const set = new Set();
   for (const d of decksPublic) {
-    if (d?.ownerHandle) set.add(String(d.ownerHandle).trim());
+    const h = getDeckOwnerHandle(d);
+    if (h) set.add(h);
   }
   ownersList = [...set].sort((a,b)=>collator.compare(a,b));
 }
-await loadDatasets();
-updateOwners();
+
 
       // ===== Render chips de cartas seleccionadas =====
       function paintChips() {
@@ -415,13 +406,12 @@ updateOwners();
         return name.includes(needle) || desc.includes(needle);
       }
 
-      function passOwner(deck) {
-  // Solo aplica en pestaña 'public'
-  if (state.tab !== 'public') return true;
-  if (!state.owner) return true;
-  const h = deck?.ownerHandle ? normOwner(deck.ownerHandle) : '';
-  return h === state.owner;
+function passOwner(deck) {
+  // Solo en pestaña 'public' y cuando hay valor en el filtro
+  if (state.tab !== 'public' || !state.owner) return true;
+  return getDeckOwnerHandle(deck) === state.owner;
 }
+
 
 function applyOne(list) {
   return list.filter(d =>
@@ -461,8 +451,10 @@ function applyOne(list) {
       function deckTileHTML(deck, opts={}) {
         const owner = deck?.ownerHandle ? `· @${deck.ownerHandle}` : '';
         const desc  = deck?.descripcion ? `<div class="desc">${deck.descripcion}</div>` : '';
-        const usedXeno = Math.min(xenoUsed(deck?.ids), Number(deck?.xenoMax ?? 0));
-
+        const haveCatalog = idxCards.size > 0;
+const usedXeno = haveCatalog
+  ? Math.min(xenoUsed(deck?.ids), Number(deck?.xenoMax ?? 0))
+  : null;
         return `
           <article class="deck" role="listitem">
             ${deckThumbsHTML(deck)}
@@ -475,7 +467,7 @@ function applyOne(list) {
     : ``}
 </h3>
               <div class="line">
-                <span class="chip">Xeno ${usedXeno}/${deck?.xenoMax ?? 0}</span>
+                <span class="chip">Xeno ${usedXeno === null ? '—' : usedXeno}/${deck?.xenoMax ?? 0}</span>
                 <span class="chip">Huecos máx ${deck?.huecosMax ?? 0}</span>
                 <a class="btn" href="/api/decks/${encodeURIComponent(String(deck?.id ?? ''))}" target="_blank" rel="noopener">Ver JSON</a>
                 ${opts.allowDelete ? `<button class="btn" data-edit="${deck?.id}">Editar</button>` : ''}
@@ -487,21 +479,43 @@ function applyOne(list) {
         `;
       }
 
-      function paintLists() {
-        const filteredPub  = applyOne(decksPublic);
-        const filteredMine = applyOne(decksMine);
+      let lastPubHTML = '', lastMineHTML = '';
 
-        listPub.innerHTML  = filteredPub.length
-          ? filteredPub.map(d => deckTileHTML(d, { showOwner:true })).join('')
-          : `<p class="sub">No hay mazos que cumplan los filtros.</p>`;
+function paintLists() {
+  const filteredPub  = applyOne(decksPublic);
+  const filteredMine = applyOne(decksMine);
 
-        listMine.innerHTML = (me && filteredMine.length)
-          ? filteredMine.map(d => deckTileHTML(d, { allowDelete:true })).join('')
-          : (!me ? '' : `<p class="sub">No hay mazos que cumplan los filtros.</p>`);
+  // Públicos
+  let pubHTML;
+  if (loading.public) {
+    pubHTML = `<p class="sub">Cargando…</p>`;                 // NUEVO: no machacar el spinner
+  } else {
+    pubHTML = filteredPub.length
+      ? filteredPub.map(d => deckTileHTML(d, { showOwner:true })).join('')
+      : `<p class="sub">No hay mazos que cumplan los filtros.</p>`;
+  }
+  if (pubHTML !== lastPubHTML) { listPub.innerHTML = pubHTML; lastPubHTML = pubHTML; }
 
-        const total = state.tab === 'public' ? filteredPub.length : (me ? filteredMine.length : 0);
-        elCounter.textContent = (state.tab === 'public' ? 'Públicos: ' : 'Mis mazos: ') + total;
-      }
+  // Mis mazos
+  let mineHTML;
+  if (!me) {
+    mineHTML = ''; // el mensaje de "Inicia sesión…" lo manejas con #noSession
+  } else if (loading.mine) {
+    mineHTML = `<p class="sub">Cargando…</p>`;                 // NUEVO
+  } else {
+    mineHTML = filteredMine.length
+      ? filteredMine.map(d => deckTileHTML(d, { allowDelete:true })).join('')
+      : `<p class="sub">No hay mazos que cumplan los filtros.</p>`;
+  }
+  if (mineHTML !== lastMineHTML) { listMine.innerHTML = mineHTML; lastMineHTML = mineHTML; }
+
+  const total = state.tab === 'public'
+    ? (loading.public ? 0 : filteredPub.length)
+    : (!me ? 0 : (loading.mine ? 0 : filteredMine.length));
+  elCounter.textContent = (state.tab === 'public' ? 'Públicos: ' : 'Mis mazos: ') + total;
+}
+
+
 
       function switchTab(tab) {
         state.tab = tab;
@@ -516,10 +530,23 @@ function applyOne(list) {
           panelMine.classList.remove('hidden');
           panelPub.classList.add('hidden');
         }
-        elOwnerWrap.style.display = (tab === 'public') ? '' : 'none';
-        apply(); // repinta counter acorde a la pestaña
-        elFOwner.disabled = (tab !== 'public');
+ // El filtro de propietario solo aplica a 'public'
+if (tab !== 'public') {
+  state.owner = '';
+  if (elFOwner) elFOwner.value = '';
+  if (elSuggest) elSuggest.classList.add('hidden');
+}
+// Mostrar/ocultar el input según pestaña
+if (elOwnerWrap) elOwnerWrap.classList.toggle('hidden', tab !== 'public');
+
+applySoon();
       }
+let applyPending = false;
+function applySoon(){
+  if (applyPending) return;
+  applyPending = true;
+  requestAnimationFrame(() => { applyPending = false; apply(); });
+}
 
       function apply() { paintChips(); paintLists(); }
 
@@ -616,23 +643,131 @@ elFOwner.addEventListener('focus', () => updateOwnerSuggest());
 document.addEventListener('click', (e) => {
   if (!elOwnerWrap.contains(e.target)) elSuggest.classList.add('hidden');
 });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.tab === 'public') {
+    if (Date.now() - (lastPublicFetchAt || 0) > 20_000) {
+      loadPublic();
+    }
+  }
+});
+
+
 
 
       elTabPub.addEventListener('click', () => switchTab('public'));
       elTabMine.addEventListener('click', () => switchTab('mine'));
 
-      // ===== Boot =====
-      (async () => {
-        // 1) Cargar catálogo (para thumbs del deck y picker)
-        catalog = await loadCatalog();
-        idxCards = new Map(catalog.map(c => [norm(c.id), c]));
+      // ===== Utilidades networking específicas =====
+async function getSession() {
+  try {
+    const r = await fetch('/api/auth/me?ts=' + Date.now(), {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'accept': 'application/json' }
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.user || null;
+  } catch { return null; }
+}
 
-        // 2) Datasets
-        await loadDatasets();
+let lastPublicFetchAt = 0;
 
-        // 3) Tab por defecto según sesión
-        switchTab(me ? 'mine' : 'public');
-      })();
+async function loadPublic() {
+  const url = '/api/decks?scope=public&expand=1';
+  try {
+    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+    const data = await res.json();
+    // Acepta ambos formatos: {decks:[...]} o directamente [...]
+    decksPublic = Array.isArray(data?.decks) ? data.decks : (Array.isArray(data) ? data : []);
+    lastPublicFetchAt = Date.now();
+    loading.public = false;
+    updateOwners();
+    applySoon(); // ✅ repinta
+  } catch {
+    loading.public = false;
+    decksPublic = [];
+    applySoon(); // ✅ repinta
+  }
+}
+
+
+
+async function loadMineIf(sessionUser) {
+  if (!sessionUser) { decksMine = []; elNoSession.style.display = ''; loading.mine = false; applySoon(); return; }
+
+  const KEY = 'mitocards:mine:decks';
+  try {
+    // 1) Pintado instantáneo si hay copia de esta sesión
+    const cached = sessionStorage.getItem(KEY);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      decksMine = Array.isArray(obj?.decks) ? obj.decks : [];
+      elNoSession.style.display = 'none';
+      loading.mine = false;
+      applySoon();
+    }
+
+    // 2) Revalidación
+    const obj = await fetchJSON('/api/decks?expand=1');
+    decksMine = Array.isArray(obj?.decks) ? obj.decks : [];
+    elNoSession.style.display = 'none';
+    loading.mine = false;
+    applySoon();
+
+    // 3) Cachea solo en la sesión actual
+    sessionStorage.setItem(KEY, JSON.stringify(obj));
+  } catch {
+    decksMine = [];
+    elNoSession.style.display = '';
+    loading.mine = false;
+    applySoon();
+  }
+}
+
+
+// Persiste la pestaña elegida para no “saltar” luego
+function getInitialTab() {
+  return localStorage.getItem('repoTab') || 'public';
+}
+const _oldSwitchTab = switchTab;
+switchTab = (tab) => {
+  localStorage.setItem('repoTab', tab);
+  _oldSwitchTab(tab);
+};
+
+// ===== Boot (no bloqueante, “pinta pronto, mejora luego”) =====
+(async () => {
+  // 0) Pestaña inicial estable (no dependas de la sesión para no “saltar”)
+  switchTab(getInitialTab());
+  // Mensaje de carga rápido
+  listPub.innerHTML = `<p class="sub">Cargando…</p>`;
+  listMine.innerHTML = `<p class="sub">Cargando…</p>`;
+
+  // 1) Dispara en paralelo: sesión, públicos y catálogo (este último diferido)
+  const pSession = getSession();
+const pPublic  = loadPublic();
+const pCatalog = loadCatalog()
+  .then((arr) => {
+    catalog  = arr;
+    idxCards = new Map(arr.map(c => [norm(c.id), c]));
+    // ¡OJO! solo mejora las tarjetas cuando existan datos; no rompas el “Cargando…”
+    if (!loading.public && (state.tab === 'public' ? decksPublic.length : decksMine.length)) applySoon();
+  })
+  .catch(() => {});
+
+  // 2) Cuando tengas sesión, carga Mis mazos SIN cambiar de pestaña
+  me = await pSession;
+  loadMineIf(me);                          // no bloquea nada más
+
+  // 3) (Opcional) si la pestaña guardada es inválida para el usuario, corrige:
+  if (!me && localStorage.getItem('repoTab') === 'mine') {
+    switchTab('public');
+  }
+
+  // Nota: no hacemos “await pCatalog”; cuando llegue, apply() repinta Xeno/thumbs.
+})();
+
     </script>
   </body>
 </html>

@@ -25,6 +25,21 @@ import "../styles/globals.css";
       .tool{display:flex;gap:8px;align-items:center}
       .tool label{color:var(--muted);font-size:.95rem}
       input[type="text"],input[type="number"]{background:var(--tile);color:var(--fg);border:1px solid #2a2a33;border-radius:10px;padding:8px 10px;min-width:120px}
+
+/* Tamaño controlable por variable */
+:root{
+  --numw: 60px; /* cambia este valor para ajustar globalmente */
+}
+.short-num{
+  width: var(--numw);
+  min-width: var(--numw) !important; /* pisa el min-width global de los number */
+  text-align:center;
+  padding-inline:6px;
+}
+@media (min-width:640px){
+  :root{ --numw: 56px; } /* aún más compacto en escritorio (ajústalo a tu gusto) */
+}
+
       .chip{background:var(--chip);color:var(--fg);padding:6px 10px;border-radius:999px;font-weight:600}
       .chip.bad{background:#3a2326;color:#ffb3b9}
       .chip.ok{background:#233a2a;color:#b7ffb3}
@@ -146,20 +161,26 @@ import "../styles/globals.css";
 
     <div class="toolbar">
       <div class="tool"><label for="deckName">Nombre</label><input id="deckName" type="text" value="Mi mazo" /></div>
-      <div class="tool"><label for="xenoMax">Xeno máx</label><input id="xenoMax" type="number" value="35" min="0" step="1" /></div>
-      <div class="tool"><label for="huecosMax">Huecos máx</label><input id="huecosMax" type="number" value="8" min="1" step="1" /></div>
+      <div class="tool"><label for="xenoMax">Xeno</label>
+<input id="xenoMax" class="short-num" type="number"
+       value="35" min="0" max="99" step="1"
+       inputmode="numeric" pattern="\d*" /></div>
+      <div class="tool"><label for="huecosMax">Huecos</label>
+<input id="huecosMax" class="short-num" type="number"
+       value="8" min="1" max="99" step="1"
+       inputmode="numeric" pattern="\d*" /></div>
 
       <div class="spacer"></div>
 
       <span id="countHuecos" class="chip">0/8</span>
       <span id="countXeno" class="chip">Xeno 0/35</span>
-      <span id="dupState" class="chip">Sin duplicados</span>
       <span id="validState" class="chip bad">INVÁLIDO</span>
 
-      <button id="btnImport" class="btn">Importar</button>
-      <button id="btnClear" class="btn">Vaciar</button>
-      <button id="btnExport" class="btn" disabled>Guardar local</button>
-      <button id="btnSaveCloud" class="btn">Guardar en la nube</button>
+      <button id="btnImport" class="btn" type="button">Importar</button>
+<button id="btnClear"  class="btn" type="button">Vaciar</button>
+<button id="btnExport" class="btn" type="button" disabled>Guardar local</button>
+<button id="btnSaveCloud" class="btn" type="button" disabled>Guardar en la nube</button>
+
 
     </div>
 
@@ -252,6 +273,32 @@ import "../styles/globals.css";
         const el = document.getElementById("top-warn");
         el.textContent = msg; el.style.display = "block";
       };
+function safeCloseOverlays() {
+  try {
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden','true');
+  } catch {}
+  document.body.style.overflow = '';
+}
+
+      // === Invalida cachés de listas de mazos ===
+async function invalidateDecksCaches(scopes = ['public','mine']) {
+  try {
+    // 1) Cache Storage (usado también por el SW)
+    const apiCache = await caches.open('mitocards-api-v1');
+    const targets = [];
+    if (scopes.includes('public')) targets.push('/api/decks?scope=public&expand=1');
+    if (scopes.includes('mine'))   targets.push('/api/decks?expand=1');
+    for (const u of targets) {
+      await apiCache.delete(new Request(u), { ignoreSearch: false });
+    }
+    // 2) Avisar al SW (otras pestañas)
+    navigator.serviceWorker?.controller?.postMessage({ type: 'invalidate', urls: targets });
+    // 3) Sesión local para "Mis mazos"
+    if (scopes.includes('mine')) sessionStorage.removeItem('mitocards:mine:decks');
+  } catch {}
+}
+
       // ===== Draft en localStorage (para volver del detalle sin perder nada) =====
 const DRAFT_KEY = "mitocards.deckDraft.v1";
 
@@ -350,7 +397,6 @@ constructor
       const elSlots    = document.getElementById("slots");
       const elCtnXeno  = document.getElementById("countXeno");
       const elCtnHue   = document.getElementById("countHuecos");
-      const elDup      = document.getElementById("dupState");
       const elValid    = document.getElementById("validState");
       const btnImport  = document.getElementById("btnImport");
       const btnExport  = document.getElementById("btnExport");
@@ -642,6 +688,7 @@ elDesc.addEventListener("input", saveDraft);
         const div = document.createElement("div");
         div.className = "slot empty";
         const btn = document.createElement("button");
+        btn.type = "button";
         btn.className = "add";
         btn.textContent = "➕ Añadir carta";
         btn.addEventListener("click", () => {
@@ -662,12 +709,15 @@ elDesc.addEventListener("input", saveDraft);
 
         elCtnXeno.textContent = `Xeno ${xenoTotal}/${xenoMax}`;
         elCtnHue.textContent  = `${huecosUsed}/${huecosMax}`;
-        elDup.textContent = dupFree ? "Sin duplicados" : "Con duplicados";
-        elDup.className = `chip ${dupFree ? "ok" : "bad"}`;
         elValid.textContent = valid ? "VÁLIDO" : "INVÁLIDO";
         elValid.className = `chip ${valid ? "ok" : "bad"}`;
         btnExport.disabled = !valid;
-        btnExport.title = valid ? "Guardar mazo" : "El mazo es inválido (revisa duplicados / Xeno / Huecos)";
+        btnExport.title = valid ? "Guardar mazo" : "El mazo es inválido (revisa Xeno / Huecos)";
+        btnSaveCloud.disabled = !valid;
+btnSaveCloud.title = valid
+  ? (editingId ? "Guardar cambios en la nube" : "Guardar en tu cuenta")
+  : "El mazo es inválido (revisa Xeno / Huecos)";
+
         saveDraft();
       };
 
@@ -692,7 +742,8 @@ btnSaveCloud.addEventListener('click', async () => {
   }
   const me = await window.AuthLite.require();
   if (!me) return;
-
+const { valid } = isValidDeck(ids, Number(elXenoMax.value)||0, Number(elHueMax.value)||0);
+  if (!valid) { alert('El mazo es inválido. Ajusta Xeno/Huecos antes de guardar.'); return; }
   // Construye SIEMPRE desde el DOM/estado ya inicializado
   const payload = {
     nombre: document.getElementById("deckName").value || "",
@@ -714,14 +765,15 @@ btnSaveCloud.addEventListener('click', async () => {
       });
       if (!r.ok) throw new Error('PUT /api/decks/:id → ' + r.status);
       await r.json().catch(()=> ({}));
+      await invalidateDecksCaches(['public','mine']);
       alert(`Mazo actualizado ✓\nVisibilidad: ${editingVisibility}\nID: ${editingId}`);
     } else {
       // --- Modo nuevo: flujo actual ---
       const publico = confirm('¿Hacer este mazo PÚBLICO? (Aceptar = público, Cancelar = privado)');
       const visibility = publico ? 'public' : 'private';
       const resp = await window.AuthLite.saveDeck(payload, visibility);
-
       if (resp?.error) throw new Error(resp.error);
+      await invalidateDecksCaches(['public','mine']);
       alert(`Mazo guardado en tu cuenta ✓\nVisibilidad: ${visibility}\nID: ${resp.deck?.id || '(sin id)'}`);
     }
   } catch (e) {
@@ -791,16 +843,22 @@ btnSaveCloud.addEventListener('click', async () => {
         inp.click();
       });
 
-      btnClear.addEventListener("click", () => {
-  if (!confirm("Vaciar mazo actual?")) return;
+btnClear.addEventListener("click", () => {
+  safeCloseOverlays();                 // <-- nuevo: cierra overlay/scroll si estuviera abierto
+  if (!confirm("¿Vaciar el mazo actual?")) { 
+    safeCloseOverlays();               // <-- asegura desbloqueo incluso si se cancela
+    return; 
+  }
   ids = [];
-  elDesc.value = "";               // ⬅️ borra también la descripción
+  elDesc.value = "";
   renderSlots();
   recompute();
-  localStorage.removeItem(DRAFT_KEY); // ⬅️ opcional: limpia el draft guardado
+  localStorage.removeItem(DRAFT_KEY);
+
+  safeCloseOverlays();                 // <-- redundante pero inofensivo
+  const name = document.getElementById("deckName");
+  if (name) name.focus();              // <-- recupera foco para que puedas escribir al instante
 });
-
-
 
       // ================= Boot =================
       (async () => {

@@ -1,0 +1,16 @@
+{
+  "nombre": "Duo Oriental",
+  "xenoMax": 35,
+  "huecosMax": 8,
+  "ids": [
+    "muralla-china",
+    "veneno-silenciador",
+    "cerbero",
+    "quimera",
+    "ninja",
+    "grifo",
+    "trineo-de-lobos",
+    "marmita"
+  ],
+  "descripcion": "Ninja Muralla China"
+}

@@ -1,0 +1,23 @@
+{
+  "deck": {
+    "id": "55993c0b-c057-4d5a-8dce-1aca31cd60fd",
+    "owner": "2bf6e383-b01e-4413-9549-3f00bf46daac",
+    "ownerHandle": "iván98",
+    "visibility": "public",
+    "nombre": "Dupla Oriental",
+    "xenoMax": 35,
+    "huecosMax": 8,
+    "ids": [
+      "trineo-de-lobos",
+      "cerbero",
+      "quimera",
+      "ninja",
+      "marmita",
+      "muralla-china",
+      "veneno-silenciador",
+      "grifo"
+    ],
+    "descripcion": "Ninja-Muralla, con cartas de aguante para aprovechar el ataque del ninja y controlar partida. Sorpresa final con la quimera ya que no ha visto mazo, para revivir a grifo o cerbero dependiendo de la situación jeje.",
+    "createdAt": "2025-09-19T08:10:08.118Z"
+  }
+}
