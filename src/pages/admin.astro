@@ -1,0 +1,225 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Admin usuarios" showBack>
+  <section class="admin-wrap">
+    <h1>Administracion de usuarios</h1>
+    <p class="muted">
+      Panel privado: listar cuentas, resetear contrasenas, renombrar handle y borrar usuarios.
+    </p>
+    <p class="muted">
+      Si solo quieres ver perfiles publicos, usa <a href="/perfiles">Perfiles</a>.
+    </p>
+
+    <div class="bar">
+      <input id="adminKey" type="password" placeholder="Admin key (requerida)" />
+      <button id="btnLoad">Cargar usuarios</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+    <div id="users"></div>
+  </section>
+
+  <script type="module">
+    const $ = (s) => document.querySelector(s);
+    const msg = $("#msg");
+    const usersEl = $("#users");
+    const keyEl = $("#adminKey");
+    const loadBtn = $("#btnLoad");
+
+    const KEY_STORAGE = "mitocards:admin:key";
+    keyEl.value = localStorage.getItem(KEY_STORAGE) || "";
+    keyEl.addEventListener("change", () => localStorage.setItem(KEY_STORAGE, keyEl.value.trim()));
+
+    const api = async (method, body = null) => {
+      const headers = { "content-type": "application/json" };
+      const k = keyEl.value.trim();
+      if (k) headers["x-admin-key"] = k;
+      const r = await fetch("/api/admin/users", {
+        method,
+        headers,
+        credentials: "include",
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+      return data;
+    };
+
+    function setMsg(text, ok = false) {
+      msg.textContent = text || "";
+      msg.className = `msg ${ok ? "ok" : "err"}`;
+    }
+
+    function userCard(u) {
+      const created = u.createdAt ? new Date(u.createdAt).toLocaleString() : "sin fecha";
+      const avatar = u?.profile?.avatarUrl || "/img/placeholder-card.svg";
+      const displayName = u?.profile?.displayName ? ` (${u.profile.displayName})` : "";
+      return `
+        <article class="user">
+          <header>
+            <div class="who">
+              <img src="${avatar}" alt="avatar @${u.handle}" />
+              <h3>@${u.handle}${displayName}</h3>
+            </div>
+            <span>ID: ${u.id}</span>
+          </header>
+          <p>Creado: ${created}</p>
+          <p>Password: ${u.hasPassword ? "si" : "no"} · Mazos: ${u.decks}</p>
+          <div class="actions">
+            <button data-act="reset" data-handle="${u.handle}">Reset password</button>
+            <button data-act="rename" data-handle="${u.handle}">Renombrar</button>
+            <button data-act="delete" data-handle="${u.handle}" class="danger">Eliminar</button>
+          </div>
+        </article>
+      `;
+    }
+
+    async function loadUsers() {
+      setMsg("Cargando...", true);
+      try {
+        const data = await api("GET");
+        const users = Array.isArray(data?.users) ? data.users : [];
+        usersEl.innerHTML = users.length
+          ? users.map(userCard).join("")
+          : `<p class="muted">No hay usuarios.</p>`;
+        setMsg(`Usuarios: ${users.length}`, true);
+      } catch (e) {
+        setMsg(`Error: ${e.message}`);
+      }
+    }
+
+    usersEl.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button[data-act]");
+      if (!btn) return;
+      const act = btn.dataset.act;
+      const handle = btn.dataset.handle;
+      try {
+        if (act === "reset") {
+          const newPassword = prompt(`Nueva contrasena para @${handle}:`) || "";
+          if (!newPassword) return;
+          await api("POST", { action: "resetPassword", handle, newPassword });
+          setMsg(`Password actualizada para @${handle}`, true);
+        }
+        if (act === "rename") {
+          const newHandle = prompt(`Nuevo handle para @${handle}:`) || "";
+          if (!newHandle) return;
+          await api("POST", { action: "renameHandle", handle, newHandle });
+          setMsg(`Handle actualizado: @${handle} -> @${newHandle}`, true);
+        }
+        if (act === "delete") {
+          if (!confirm(`Eliminar cuenta @${handle}?`)) return;
+          await api("POST", { action: "deleteUser", handle });
+          setMsg(`Cuenta @${handle} eliminada`, true);
+        }
+        await loadUsers();
+      } catch (e) {
+        setMsg(`Error: ${e.message}`);
+      }
+    });
+
+    loadBtn.addEventListener("click", loadUsers);
+    loadUsers();
+  </script>
+</Layout>
+
+<style>
+  .admin-wrap {
+    max-width: 980px;
+    margin: 24px auto 36px;
+    padding: 0 16px;
+  }
+
+  .muted {
+    opacity: 0.75;
+  }
+
+  .bar {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0 16px;
+  }
+
+  .bar input {
+    flex: 1;
+    min-width: 220px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #2a2a33;
+    background: #1a1d27;
+    color: #fff;
+  }
+
+  .bar button {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #3a3f4a;
+    background: #2a2f3a;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .msg {
+    min-height: 24px;
+    margin-bottom: 10px;
+  }
+
+  .msg.ok {
+    color: #b8ffb8;
+  }
+
+  .msg.err {
+    color: #ffb3b3;
+  }
+
+  .user {
+    background: #161922;
+    border: 1px solid #2a2a33;
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
+  .user header {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+  }
+
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .who img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #3a3f4a;
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .actions button {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #3a3f4a;
+    background: #2a2f3a;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .actions button.danger {
+    background: #4a2525;
+    border-color: #8a3434;
+  }
+</style>

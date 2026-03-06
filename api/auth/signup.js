@@ -1,60 +1,82 @@
-// /api/auth/signup.js
 import {
-  getUserByHandle, putUser, hashPassword, verifyPassword, createSession,
-  sendJson, sendBad, setCookieNode, SESSION_COOKIE, randomUUID
-} from '../_lib.js';
-export const config = { runtime: 'nodejs' };
+  createSession,
+  getAvatarCatalog,
+  getUserByHandle,
+  hashPassword,
+  isValidHandle,
+  isValidPassword,
+  normalizeHandle,
+  pickAvatar,
+  putUser,
+  randomUUID,
+  readBody,
+  sendBad,
+  sendJson,
+  SESSION_COOKIE,
+  setCookieNode,
+  toClientUser,
+} from "../_lib.js";
+
+export const config = { runtime: "nodejs" };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return sendBad(res, 'POST only', 405);
+  try {
+    if (req.method !== "POST") return sendBad(res, "POST only", 405);
 
-  let body = {};
-  try { body = await readBody(req); } catch { return sendBad(res, 'invalid json', 400); }
-
-  const rawHandle = body.handle ?? body.alias ?? body.username ?? body.user ?? '';
-  const h = String(rawHandle).trim().toLowerCase();
-  const p = String(body.password ?? '');
-
-  if (!h) return sendBad(res, 'handle requerido', 400);
-
-  // ¿Ya existe? -> comportarse como LOGIN
-  const existing = await getUserByHandle(h);
-  if (existing) {
-    if (existing.hash && existing.salt) {
-      if (!p) return sendBad(res, 'contraseña requerida', 401);
-      if (!verifyPassword(p, existing.hash, existing.salt)) {
-        return sendBad(res, 'contraseña incorrecta', 401);
-      }
+    let body = {};
+    try {
+      body = await readBody(req);
+    } catch {
+      return sendBad(res, "invalid json", 400);
     }
-    const sess = await createSession(existing);
+
+    const handle = normalizeHandle(body.handle ?? body.alias ?? body.username ?? body.user ?? "");
+    const password = String(body.password ?? "");
+    const avatarId = String(body.avatarId ?? "");
+
+    if (!isValidHandle(handle)) {
+      return sendBad(res, "handle invalido (2-32, a-z, 0-9, _, -, .)", 400);
+    }
+    if (!isValidPassword(password)) {
+      return sendBad(res, "password requerida", 400);
+    }
+
+    const existing = await getUserByHandle(handle);
+    if (existing) return sendBad(res, "handle ya existe", 409);
+
+    const avatars = await getAvatarCatalog();
+    const chosenAvatar = pickAvatar(avatars, avatarId);
+    const { hash, salt } = hashPassword(password);
+
+    const user = await putUser({
+      id: randomUUID(),
+      handle,
+      createdAt: new Date().toISOString(),
+      hash,
+      salt,
+      profile: {
+        avatarId: chosenAvatar.id,
+        avatarName: chosenAvatar.name,
+        avatarUrl: chosenAvatar.url,
+        displayName: handle,
+        bio: "",
+        extras: {},
+      },
+    });
+
+    const sess = await createSession(user);
     setCookieNode(res, SESSION_COOKIE, sess.token, { maxAge: 60 * 60 * 24 * 30 });
-    return sendJson(res, { ok: true, user: { id: existing.id, handle: existing.handle } }, 200);
+
+    return sendJson(
+      res,
+      {
+        ok: true,
+        user: await toClientUser(user),
+      },
+      201
+    );
+  } catch (error) {
+    console.error("auth/signup crash:", error);
+    return sendBad(res, "server error", 500);
   }
-
-  // Si no existe -> crear y loguear
-  const user = { id: randomUUID(), handle: h };
-  if (p) {
-    const { hash, salt } = hashPassword(p);
-    user.hash = hash; user.salt = salt;
-  }
-  await putUser(user);
-
-  const sess = await createSession(user);
-  setCookieNode(res, SESSION_COOKIE, sess.token, { maxAge: 60 * 60 * 24 * 30 });
-  sendJson(res, { ok: true, user: { id: user.id, handle: user.handle } }, 200);
 }
-
-async function readBody(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  const chunks = [];
-  for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
-  const txt = Buffer.concat(chunks).toString('utf8');
-  if (!txt) return {};
-  try { return JSON.parse(txt); } catch {}
-  try { return Object.fromEntries(new URLSearchParams(txt)); } catch {}
-  return {};
-}
-
-
-
-

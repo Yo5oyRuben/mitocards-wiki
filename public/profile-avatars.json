@@ -1,0 +1,42 @@
+[
+  {
+    "id": "alquimista",
+    "name": "Alquimista",
+    "url": "/img/cartas/webp_l/alquimista_dibujo.webp"
+  },
+  {
+    "id": "diablo",
+    "name": "Diablo",
+    "url": "/img/cartas/webp_l/diablo_dibujo.webp"
+  },
+  {
+    "id": "hidra",
+    "name": "Hidra",
+    "url": "/img/cartas/webp_l/hidra_dibujo.webp"
+  },
+  {
+    "id": "anubis",
+    "name": "Anubis",
+    "url": "/img/cartas/webp_l/anubis_dibujo.webp"
+  },
+  {
+    "id": "medusa",
+    "name": "Medusa",
+    "url": "/img/cartas/webp_l/medusa_dibujo.webp"
+  },
+  {
+    "id": "minotauro",
+    "name": "Minotauro",
+    "url": "/img/cartas/webp_l/minotauro_dibujo.webp"
+  },
+  {
+    "id": "yeti",
+    "name": "Yeti",
+    "url": "/img/cartas/webp_l/yeti_dibujo.webp"
+  },
+  {
+    "id": "serpiente-emplumada",
+    "name": "Serpiente Emplumada",
+    "url": "/img/cartas/webp_l/serpiente-emplumada_dibujo.webp"
+  }
+]

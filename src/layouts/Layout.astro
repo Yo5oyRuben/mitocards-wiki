@@ -1,11 +1,23 @@
 ---
 import "../styles/globals.css";
-import Analytics from '@vercel/analytics/astro';
-export interface Props { title?: string; showBack?: boolean }
-const { title = "Mitocards", showBack = false } = Astro.props;
+import Analytics from "@vercel/analytics/astro";
 
+export interface Props {
+  title?: string;
+  description?: string;
+  showBack?: boolean;
+  backHref?: string;
+  backLabel?: string;
+}
+
+const {
+  title = "Mitocards",
+  description = "Mitocards Wiki y constructor de mazos",
+  showBack = false,
+  backHref = "/",
+  backLabel = "Volver al menu",
+} = Astro.props;
 ---
-
 
 <!doctype html>
 <html lang="es">
@@ -14,14 +26,15 @@ const { title = "Mitocards", showBack = false } = Astro.props;
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
     <title>{title}</title>
+    <slot name="head" />
   </head>
-
   <body>
     <header class="site-header">
       {showBack && (
         <nav class="back-nav">
-          <a href="/" class="back-btn" aria-label="Volver al menú principal">← Volver al menú</a>
+          <a href={backHref} class="back-btn" aria-label={backLabel}>← {backLabel}</a>
         </nav>
       )}
     </header>
@@ -29,35 +42,63 @@ const { title = "Mitocards", showBack = false } = Astro.props;
     <main class="site-main">
       <slot />
     </main>
+
     <Analytics />
-    <script src="/js/auth-ui.js" defer></script>
-
-
+    <script src="/js/auth-ui.js?v=20260306d" defer></script>
     <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(console.error);
-    });
-  }
-</script>
-
+      if ('serviceWorker' in navigator && !window.__mitocardsSwRegistered) {
+        window.__mitocardsSwRegistered = true;
+        window.addEventListener(
+          'load',
+          () => {
+            navigator.serviceWorker.register('/sw.js').catch(console.error);
+          },
+          { once: true }
+        );
+      }
+    </script>
   </body>
 </html>
 
 <style>
-  html, body { margin:0; width:100%; height:100%; }
-
-  .site-header { position: relative; z-index: 1000; }
-  .back-nav { position: sticky; top: 12px; padding: 8px 12px; }
-  .back-btn {
-    display:inline-flex; align-items:center; gap:8px;
-    padding:8px 12px; border-radius:10px;
-    border:1px solid rgba(255,255,255,.18);
-    background:rgba(255,255,255,.08);
-    color:inherit; text-decoration:none;
-    backdrop-filter: blur(4px);
-    transition: background .15s, border-color .15s, transform .05s;
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
   }
-  .back-btn:hover { background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.28); }
-  .back-btn:active { transform: translateY(1px); }
+
+  .site-header {
+    position: relative;
+    z-index: 1000;
+  }
+
+  .back-nav {
+    position: sticky;
+    top: 12px;
+    padding: 8px 12px;
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    text-decoration: none;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  }
+
+  .back-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+
+  .back-btn:active {
+    transform: translateY(1px);
+  }
 </style>

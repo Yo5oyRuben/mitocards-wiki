@@ -1,0 +1,158 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Perfil - Mitocards" showBack backHref="/perfiles" backLabel="Volver a perfiles">
+  <section class="wrap">
+    <div id="head" class="head"></div>
+    <h2>Mazos publicos</h2>
+    <div id="decks" class="decks"></div>
+  </section>
+
+  <script type="module">
+    const $ = (s) => document.querySelector(s);
+    const head = $("#head");
+    const decks = $("#decks");
+
+    function q(name) {
+      return new URLSearchParams(location.search).get(name) || "";
+    }
+
+    function deckCard(d) {
+      const date = d?.updatedAt ? new Date(d.updatedAt).toLocaleString() : "sin fecha";
+      return `
+        <a class="deck" href="/api/decks/${encodeURIComponent(d.id)}" target="_blank" rel="noopener">
+          <h3>${d.nombre || "(sin nombre)"}</h3>
+          <p class="meta">Xeno ${d.xenoMax} · Huecos ${d.huecosMax} · ${date}</p>
+          ${d?.descripcion ? `<p class="desc">${d.descripcion}</p>` : ""}
+        </a>
+      `;
+    }
+
+    async function boot() {
+      const handle = q("u").trim().toLowerCase();
+      if (!handle) {
+        head.innerHTML = `<p class="err">Perfil no especificado.</p>`;
+        return;
+      }
+
+      try {
+        const r = await fetch(`/api/users/${encodeURIComponent(handle)}`, { cache: "no-store" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || "Error");
+
+        const u = j.user;
+        const avatar = u?.profile?.avatarUrl || "/img/placeholder-card.svg";
+        const display = u?.profile?.displayName ? ` · ${u.profile.displayName}` : "";
+        const bio = u?.profile?.bio ? `<p class="bio">${u.profile.bio}</p>` : "";
+        head.innerHTML = `
+          <img src="${avatar}" alt="avatar @${u.handle}" />
+          <div>
+            <h1>@${u.handle}${display}</h1>
+            <p class="stat">${u.decksPublic ?? 0} mazos publicos</p>
+            ${bio}
+          </div>
+        `;
+
+        const list = Array.isArray(j?.decks) ? j.decks : [];
+        decks.innerHTML = list.length ? list.map(deckCard).join("") : `<p class="sub">Este usuario no tiene mazos publicos.</p>`;
+      } catch (e) {
+        head.innerHTML = `<p class="err">${e.message || "No se pudo cargar el perfil."}</p>`;
+      }
+    }
+
+    boot();
+  </script>
+</Layout>
+
+<style>
+  .wrap {
+    max-width: 980px;
+    margin: 20px auto 36px;
+    padding: 0 16px;
+  }
+
+  .head {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 12px;
+    align-items: center;
+    background: #161922;
+    border: 1px solid #2a2a33;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+
+  .head img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid #3a3f4a;
+  }
+
+  .head h1 {
+    margin: 0 0 4px;
+    font-size: 1.35rem;
+  }
+
+  .stat {
+    margin: 0;
+    opacity: 0.85;
+  }
+
+  .bio {
+    margin: 6px 0 0;
+    opacity: 0.75;
+  }
+
+  h2 {
+    margin: 0 0 10px;
+    font-size: 1.1rem;
+  }
+
+  .decks {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .deck {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: #161922;
+    border: 1px solid #2a2a33;
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .deck:hover {
+    border-color: #44516a;
+  }
+
+  .deck h3 {
+    margin: 0 0 4px;
+  }
+
+  .meta {
+    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+
+  .desc {
+    margin: 8px 0 0;
+    opacity: 0.8;
+  }
+
+  .sub {
+    opacity: 0.75;
+  }
+
+  .err {
+    color: #ffb3b3;
+    margin: 0;
+  }
+</style>

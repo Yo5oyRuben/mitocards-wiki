@@ -3,7 +3,7 @@ import {
   getSessionFromCookie, redis,
   USER_DECKS, DECKS_PREFIX, randomUUID,
   PUBLIC_DECKS, USER_DECKS_PUBLIC, USER_DECKS_PRIVATE,
-  sendBad, sendJson
+  sendBad, sendJson, readBody
 } from '../_lib.js';
 import crypto from 'node:crypto';
 
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     if (!sess) return sendBad(res, 'no autenticado', 401);
 
     let body = {};
-    try { body = await parseJson(req); } catch { return sendBad(res, 'invalid json', 400); }
+    try { body = await readBody(req); } catch { return sendBad(res, 'invalid json', 400); }
 
     const id = randomUUID();
     const visibility = (body.visibility === 'public') ? 'public' : 'private';
@@ -118,6 +118,7 @@ export default async function handler(req, res) {
       ids: Array.isArray(body.ids) ? body.ids.map(v => String(v).trim().toLowerCase()) : [],
       descripcion: String(body.descripcion ?? ''),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     // Guardar doc + actualizar índices
@@ -137,33 +138,4 @@ export default async function handler(req, res) {
   // ===================== Otros métodos =====================
   return sendBad(res, 'GET/POST only', 405);
 }
-
-// ---------------- parseador de body (lo tenías ya) ----------------
-async function parseJson(req) {
-  if (req.body != null) {
-    if (typeof req.body === 'string') {
-      try { return JSON.parse(req.body); } catch { return {}; }
-    }
-    if (Buffer.isBuffer(req.body)) {
-      const txt = req.body.toString('utf8');
-      try { return txt ? JSON.parse(txt) : {}; } catch { return {}; }
-    }
-    if (typeof req.body === 'object') return req.body;
-  }
-  const chunks = [];
-  for await (const c of req) chunks.push(typeof c === 'string' ? Buffer.from(c) : c);
-  const txt = Buffer.concat(chunks).toString('utf8') || '';
-  if (!txt) return {};
-  try { return JSON.parse(txt); } catch {}
-  const ct = String(req.headers['content-type'] || '').split(';')[0].trim();
-  if (ct === 'application/x-www-form-urlencoded') {
-    return Object.fromEntries(new URLSearchParams(txt));
-  }
-  return {};
-}
-
-
-
-
-
 

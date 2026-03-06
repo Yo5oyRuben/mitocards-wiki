@@ -156,6 +156,7 @@ const TITLE = "Explorador de mazos";
     <div class="tabs" role="tablist" aria-label="Secciones">
       <button id="tabPublic" class="tab-btn" role="tab" aria-selected="true" aria-controls="panelPublic">Públicos</button>
       <button id="tabMine"   class="tab-btn" role="tab" aria-selected="false" aria-controls="panelMine">Mis mazos</button>
+      <a class="tab-btn" href="/perfiles" aria-label="Ir a perfiles publicos">Perfiles</a>
       <span class="spacer"></span>
       <span id="counter" class="chip">–</span>
     </div>
@@ -200,7 +201,7 @@ const TITLE = "Explorador de mazos";
       </div>
     </div>
 
-    <script src="/js/auth-ui.js" defer></script>
+    <script src="/js/auth-ui.js?v=20260306d" defer></script>
     <script type="module">
       // ===== Helpers comunes =====
       /** @type {string} */
@@ -245,7 +246,7 @@ const matches = ownersList.filter(h => norm(h).startsWith(q)).slice(0, 50);
   ?? c.ilustracion_carta_l
   ?? c.ilustracion_m
   ?? c.ilustracion_h
-  ?? c.imagen ?? c.image ?? "/img/placeholder-card.png"
+  ?? c.imagen ?? c.image ?? "/img/placeholder-card.svg"
 )),
         xeno: Number(c.xeno ?? 0) || 0,
         tipo: String(c.tipo ?? "").toLowerCase(),
@@ -430,12 +431,12 @@ function applyOne(list) {
         if (!ids.length) return `<div class="thumbs"></div>`;
         const imgs = ids.map(id => {
           const c = idxCards.get(norm(id));
-          const src = c?.ilustracion || '/img/placeholder-card.png';
+          const src = c?.ilustracion || '/img/placeholder-card.svg';
           const alt = c?.nombre ? `Carta ${c.nombre}` : 'Carta';
           const cid = encodeURIComponent(norm(id));
  const title = (c?.nombre || 'Carta').replaceAll('"','&quot;');
  return `<a class="thumb" href="/cartas/${cid}/?from=repositorio" title="${title}">
-   <img src="${src}" alt="${alt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/img/placeholder-card.png'">
+   <img src="${src}" alt="${alt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/img/placeholder-card.svg'">
  </a>`;
         }).join('');
         return `<div class="thumbs">${imgs}</div>`;
@@ -583,8 +584,8 @@ function applySoon(){
           a.href = '#';
           a.innerHTML = `
             <div class="card-4x3">
-              <img src="${c.ilustracion || '/img/placeholder-card.png'}" alt="Carta ${c.nombre}" loading="lazy" decoding="async"
-                   onerror="this.onerror=null;this.src='/img/placeholder-card.png'"/>
+              <img src="${c.ilustracion || '/img/placeholder-card.svg'}" alt="Carta ${c.nombre}" loading="lazy" decoding="async"
+                   onerror="this.onerror=null;this.src='/img/placeholder-card.svg'"/>
               <div class="meta">
                 <span class="name-badge" title="${c.nombre}">${c.nombre}</span>
                 <span class="chip">${c.xeno ?? 0}</span>
@@ -726,19 +727,15 @@ async function loadMineIf(sessionUser) {
 }
 
 
-// Persiste la pestaña elegida para no “saltar” luego
 function getInitialTab() {
-  return localStorage.getItem('repoTab') || 'public';
+  const qp = new URLSearchParams(window.location.search);
+  const tab = (qp.get('tab') || '').toLowerCase();
+  return tab === 'mine' ? 'mine' : 'public';
 }
-const _oldSwitchTab = switchTab;
-switchTab = (tab) => {
-  localStorage.setItem('repoTab', tab);
-  _oldSwitchTab(tab);
-};
 
 // ===== Boot (no bloqueante, “pinta pronto, mejora luego”) =====
 (async () => {
-  // 0) Pestaña inicial estable (no dependas de la sesión para no “saltar”)
+  // 0) Tab inicial: publico por defecto, mine solo via ?tab=mine
   switchTab(getInitialTab());
   // Mensaje de carga rápido
   listPub.innerHTML = `<p class="sub">Cargando…</p>`;
@@ -760,8 +757,8 @@ const pCatalog = loadCatalog()
   me = await pSession;
   loadMineIf(me);                          // no bloquea nada más
 
-  // 3) (Opcional) si la pestaña guardada es inválida para el usuario, corrige:
-  if (!me && localStorage.getItem('repoTab') === 'mine') {
+  // 3) Si no hay sesion y se forzo ?tab=mine, vuelve a public.
+  if (!me && state.tab === 'mine') {
     switchTab('public');
   }
 
@@ -769,5 +766,15 @@ const pCatalog = loadCatalog()
 })();
 
     </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener(
+          'load',
+          () => navigator.serviceWorker.register('/sw.js').catch(console.error),
+          { once: true }
+        );
+      }
+    </script>
   </body>
 </html>
+

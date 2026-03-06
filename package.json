@@ -4,6 +4,9 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "dev:vercel": "npx vercel dev",
+    "dev:vercel:local": "set MITOCARDS_FORCE_LOCAL=1&& npx vercel dev",
+    "dev:vercel:pull": "npx vercel env pull .env.local",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"

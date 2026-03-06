@@ -1,0 +1,151 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Perfiles - Mitocards" showBack>
+  <section class="wrap">
+    <h1>Perfiles de jugadores</h1>
+    <p class="sub">Explora usuarios y entra a su perfil publico.</p>
+
+    <div class="bar">
+      <input id="q" type="text" placeholder="Buscar por usuario..." />
+      <span id="count" class="count">-</span>
+    </div>
+
+    <div id="list" class="grid"></div>
+  </section>
+
+  <script type="module">
+    const $ = (s) => document.querySelector(s);
+    const list = $("#list");
+    const input = $("#q");
+    const count = $("#count");
+    let users = [];
+
+    function norm(v = "") {
+      return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    function card(u) {
+      const avatar = u?.profile?.avatarUrl || "/img/placeholder-card.svg";
+      const display = u?.profile?.displayName ? ` · ${u.profile.displayName}` : "";
+      const bio = u?.profile?.bio ? `<p class="bio">${u.profile.bio}</p>` : "";
+      return `
+        <a class="user" href="/perfil?u=${encodeURIComponent(u.handle)}">
+          <img src="${avatar}" alt="avatar @${u.handle}" />
+          <div class="meta">
+            <h3>@${u.handle}${display}</h3>
+            <p class="deck">${u.decksPublic ?? 0} mazos publicos</p>
+            ${bio}
+          </div>
+        </a>
+      `;
+    }
+
+    function paint() {
+      const q = norm(input.value);
+      const filtered = users.filter((u) => norm(u.handle).includes(q) || norm(u?.profile?.displayName || "").includes(q));
+      count.textContent = `${filtered.length} perfiles`;
+      list.innerHTML = filtered.length ? filtered.map(card).join("") : `<p class="sub">No hay perfiles.</p>`;
+    }
+
+    async function boot() {
+      try {
+        const r = await fetch("/api/users", { cache: "no-store" });
+        const j = await r.json();
+        users = Array.isArray(j?.users) ? j.users : [];
+      } catch {
+        users = [];
+      }
+      paint();
+    }
+
+    input.addEventListener("input", paint);
+    boot();
+  </script>
+</Layout>
+
+<style>
+  .wrap {
+    max-width: 980px;
+    margin: 20px auto 36px;
+    padding: 0 16px;
+  }
+
+  h1 {
+    margin: 0 0 6px;
+  }
+
+  .sub {
+    opacity: 0.75;
+  }
+
+  .bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 14px 0;
+  }
+
+  .bar input {
+    flex: 1;
+    min-width: 220px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #2a2a33;
+    background: #1a1d27;
+    color: #fff;
+  }
+
+  .count {
+    font-size: 0.95rem;
+    opacity: 0.8;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+  }
+
+  .user {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 10px;
+    text-decoration: none;
+    color: inherit;
+    background: #161922;
+    border: 1px solid #2a2a33;
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .user:hover {
+    border-color: #44516a;
+  }
+
+  .user img {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #3a3f4a;
+  }
+
+  .meta h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .deck {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    opacity: 0.85;
+  }
+
+  .bio {
+    margin: 6px 0 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
+  }
+</style>

@@ -1,90 +1,98 @@
-const CACHE_NAME = 'mitocards-img-v1';
-const MAX_ITEMS = 800;
-const PLACEHOLDER = '/img/placeholder-card.png';
+const IMG_CACHE = "mitocards-img-v2";
+const API_CACHE = "mitocards-api-v2";
+const MAX_IMAGE_ITEMS = 800;
+const PLACEHOLDER = "/img/placeholder-card.svg";
 
-// Cacheamos solo medianas y bajas (coincide con tus rutas /img/cartas/webp_{m,l}/…)
-const isCacheableImage = (url, dest) => {
-  if (dest !== 'image') return false;
-  return /\/img\/cartas\/(webp_m|webp_l)\//.test(url.pathname);
+const isCacheableImage = (url, destination) => {
+  if (destination !== "image") return false;
+  return /\/img\/cartas\/(webp_m|webp_l|webp_l_BN)\//.test(url.pathname);
 };
 
-self.addEventListener('install', (e) => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+const isDecksApi = (url, request) => {
+  return (
+    request.method === "GET" &&
+    url.origin === self.location.origin &&
+    url.pathname.startsWith("/api/decks")
+  );
+};
 
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  if (isCacheableImage(url, e.request.destination)) {
-    e.respondWith(cacheFirst(e.request));
+self.addEventListener("install", () => self.skipWaiting());
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith("mitocards-") && key !== IMG_CACHE && key !== API_CACHE)
+          .map((key) => caches.delete(key))
+      );
+      await self.clients.claim();
+    })()
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  if (isCacheableImage(url, event.request.destination)) {
+    event.respondWith(cacheFirstImage(event.request));
+    return;
+  }
+
+  if (isDecksApi(url, event.request)) {
+    event.respondWith(staleWhileRevalidateApi(event.request));
   }
 });
 
-async function cacheFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
+self.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg || msg.type !== "invalidate" || !Array.isArray(msg.urls)) return;
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(API_CACHE);
+      await Promise.all(
+        msg.urls.map((url) => cache.delete(new Request(url), { ignoreSearch: false }))
+      );
+    })()
+  );
+});
+
+async function cacheFirstImage(request) {
+  const cache = await caches.open(IMG_CACHE);
   const cached = await cache.match(request, { ignoreSearch: false });
-  if (cached) return cached; // cache-first puro → 0 descargas repetidas
+  if (cached) return cached;
+
   try {
-    const resp = await fetch(request, { cache: 'no-store' });
-    if (resp.ok) {
-      await cache.put(request, resp.clone());
-      trim(cache);
+    const response = await fetch(request, { cache: "no-store" });
+    if (response.ok) {
+      await cache.put(request, response.clone());
+      await trimImageCache(cache);
     }
-    return resp;
+    return response;
   } catch {
-    return cache.match(PLACEHOLDER) || Response.error();
+    return (await cache.match(PLACEHOLDER)) || Response.error();
   }
 }
 
-async function trim(cache) {
-  const keys = await cache.keys();
-  if (keys.length > MAX_ITEMS) await cache.delete(keys[0]); // FIFO simple
-}
-
-// ======== API cache (decks) con stale-while-revalidate ========
-const API_CACHE = 'mitocards-api-v1';
-const isDecksAPI = (url, req) =>
-  req.method === 'GET' &&
-  url.origin === self.location.origin &&
-  url.pathname.startsWith('/api/decks');
-
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-
-  // Imágenes (lo que ya tenías)
-  if (isCacheableImage(url, e.request.destination)) {
-    e.respondWith(cacheFirst(e.request));
-    return;
-  }
-
-  // API decks → S-W-R
-  if (isDecksAPI(url, e.request)) {
-    e.respondWith(staleWhileRevalidateAPI(e.request));
-    return;
-  }
-});
-
-async function staleWhileRevalidateAPI(request) {
+async function staleWhileRevalidateApi(request) {
   const cache = await caches.open(API_CACHE);
   const cached = await cache.match(request, { ignoreSearch: false });
-  const networkPromise = fetch(request, { cache: 'no-store', credentials: 'include' })
-    .then(async (resp) => {
-      if (resp && resp.ok) await cache.put(request, resp.clone());
-      return resp;
+  const network = fetch(request, { cache: "no-store", credentials: "include" })
+    .then(async (response) => {
+      if (response && response.ok) {
+        await cache.put(request, response.clone());
+      }
+      return response;
     })
     .catch(() => cached || Response.error());
 
-  return cached || networkPromise;
+  return cached || network;
 }
 
-// === Invalida entradas concretas del caché cuando la app lo pida ===
-self.addEventListener('message', (e) => {
-  const msg = e.data;
-  if (msg && msg.type === 'invalidate' && Array.isArray(msg.urls)) {
-    e.waitUntil((async () => {
-      const cache = await caches.open(API_CACHE);
-      await Promise.all(msg.urls.map(u =>
-        cache.delete(new Request(u), { ignoreSearch: false })
-      ));
-    })());
-  }
-});
-
+async function trimImageCache(cache) {
+  const keys = await cache.keys();
+  const overflow = keys.length - MAX_IMAGE_ITEMS;
+  if (overflow <= 0) return;
+  await Promise.all(keys.slice(0, overflow).map((key) => cache.delete(key)));
+}
